@@ -4,16 +4,16 @@ export type TriageCase = {
   id: string;
   smartlead_lead_id?: string | null;
   smartlead_thread_id?: string | null;
-  status?: string | null;
-  score?: number | null;
-  pattern?: string | null;
   lead_name?: string | null;
   lead_email?: string | null;
-  original_reply?: string | null;
-  generated_reply?: string | null;
-  created_at?: string | null;
-  attended_at?: string | null;
-  attended_by?: string | null;
+  reply_original?: string | null;
+  reply_timestamp?: string | null;
+  segmento?: string | null;
+  patron?: string | null;
+  turn_1_generated?: string | null;
+  score?: number | null;
+  validado?: boolean | null;
+  status?: string | null;
   [key: string]: string | number | boolean | null | undefined;
 };
 
@@ -30,12 +30,12 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
     }
 
     const params = new URLSearchParams({
-      select: "*",
+      select:
+        "id,smartlead_lead_id,smartlead_thread_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,score,validado,status",
       status: "eq.pending_review",
-      "score": "gte.85",
-      order: "created_at.asc",
+      score: "gte.85",
+      order: "reply_timestamp.asc.nullslast",
     });
-    // PostgREST allows repeating filters on the same column
     params.append("score", "lte.94");
 
     const endpoint = `${url.replace(/\/$/, "")}/rest/v1/${TABLE}?${params.toString()}`;
@@ -43,7 +43,6 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
       headers: {
         apikey: key,
         Authorization: `Bearer ${key}`,
-        "Accept-Profile": "public",
       },
     });
 

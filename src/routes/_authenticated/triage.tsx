@@ -105,25 +105,25 @@ function CaseCard({ case: c }: { case: TriageCase }) {
           {typeof c.score === "number" && (
             <Badge variant="secondary">Score {c.score}</Badge>
           )}
-          {c.pattern && <Badge variant="outline">Pattern {c.pattern}</Badge>}
+          {c.patron && <Badge variant="outline">Patrón {c.patron}</Badge>}
         </div>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
-        {c.original_reply && (
+        {c.reply_original && (
           <p className="text-sm line-clamp-2 text-foreground">
             <span className="text-muted-foreground">Lead: </span>
-            {c.original_reply}
+            {c.reply_original}
           </p>
         )}
-        {c.generated_reply && (
+        {c.turn_1_generated && (
           <p className="text-sm line-clamp-2 text-muted-foreground">
             <span className="font-medium">Sugerida: </span>
-            {c.generated_reply}
+            {c.turn_1_generated}
           </p>
         )}
-        {c.created_at && (
+        {c.reply_timestamp && (
           <p className="text-xs text-muted-foreground">
-            {new Date(c.created_at).toLocaleString()}
+            {new Date(String(c.reply_timestamp)).toLocaleString()}
           </p>
         )}
       </CardContent>
