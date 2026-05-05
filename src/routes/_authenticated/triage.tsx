@@ -36,7 +36,13 @@ import {
 } from "@/server/triage.functions";
 
 export const Route = createFileRoute("/_authenticated/triage")({
-  loader: () => getTriageCases(),
+  loader: async () => {
+    const [cases, realtime] = await Promise.all([
+      getTriageCases(),
+      getRealtimeConfig(),
+    ]);
+    return { ...cases, realtime };
+  },
   staleTime: 5_000,
   pendingComponent: TriagePending,
   errorComponent: ({ error }) => {
