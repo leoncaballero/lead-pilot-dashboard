@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
 export type ClassificationOutput = {
   patron?: string;
   tono_lead?: string;
@@ -7,7 +10,7 @@ export type ClassificationOutput = {
   pidio_canal_directo?: boolean;
   canal_pedido?: string;
   notas?: string;
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 };
 
 export type ValidationOutput = {
@@ -15,7 +18,7 @@ export type ValidationOutput = {
   validado?: boolean;
   checks_pasados?: number;
   checks_fallidos?: number;
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 };
 
 export type TriageCase = {
