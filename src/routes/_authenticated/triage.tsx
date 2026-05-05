@@ -777,29 +777,39 @@ function ActionsFooter({
   onDeepReview: () => void;
 }) {
   return (
-    <div className="border-t bg-muted/30 p-4 grid grid-cols-4 gap-2">
-      <Button
-        size="lg"
-        className="bg-emerald-600 hover:bg-emerald-700 text-white"
-        onClick={onApprove}
-        disabled={disabled}
-      >
-        ✅ Aprobar
-      </Button>
-      <Button size="lg" variant="secondary" onClick={onEdit} disabled={disabled}>
-        ✏️ Editar
-      </Button>
-      <Button
-        size="lg"
-        variant="destructive"
-        onClick={onReject}
-        disabled={disabled}
-      >
-        🚫 Rechazar
-      </Button>
-      <Button size="lg" variant="outline" onClick={onDeepReview} disabled={disabled}>
-        🔍 Revisión Profunda
-      </Button>
+    <div className="border-t bg-muted/30">
+      <div className="grid grid-cols-4 gap-2 p-4">
+        <Button
+          size="lg"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          onClick={onApprove}
+          disabled={disabled}
+        >
+          ✅ Aprobar
+        </Button>
+        <Button size="lg" variant="secondary" onClick={onEdit} disabled={disabled}>
+          ✏️ Editar
+        </Button>
+        <Button
+          size="lg"
+          variant="destructive"
+          onClick={onReject}
+          disabled={disabled}
+        >
+          🚫 Rechazar
+        </Button>
+        <Button size="lg" variant="outline" onClick={onDeepReview} disabled={disabled}>
+          🔍 Revisión Profunda
+        </Button>
+      </div>
+      <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+        Atajos: <kbd className="rounded border bg-background px-1">J/K</kbd> navegar ·{" "}
+        <kbd className="rounded border bg-background px-1">A</kbd> aprobar ·{" "}
+        <kbd className="rounded border bg-background px-1">E</kbd> editar ·{" "}
+        <kbd className="rounded border bg-background px-1">R</kbd> rechazar ·{" "}
+        <kbd className="rounded border bg-background px-1">D</kbd> profunda ·{" "}
+        <kbd className="rounded border bg-background px-1">?</kbd> ayuda
+      </div>
     </div>
   );
 }
