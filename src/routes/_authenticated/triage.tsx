@@ -351,10 +351,50 @@ function TriagePage() {
             Casos pendientes con score 85–94, ordenados por antigüedad.
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
-          {cases.length} caso{cases.length === 1 ? "" : "s"}
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            className="rounded border px-2 py-1 text-xs hover:bg-accent"
+            title="Atajos de teclado"
+          >
+            ? Atajos
+          </button>
+          <span>
+            {cases.length} caso{cases.length === 1 ? "" : "s"}
+          </span>
         </div>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border bg-accent/40 px-4 py-2">
+          <div className="text-sm font-medium">
+            {selectedIds.size} caso{selectedIds.size === 1 ? "" : "s"} seleccionado
+            {selectedIds.size === 1 ? "" : "s"}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={pending}
+              onClick={() => setBulkApproveOpen(true)}
+            >
+              ✅ Aprobar todos
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={pending}
+              onClick={() => setBulkRejectOpen(true)}
+            >
+              🚫 Rechazar todos
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>
+              Deseleccionar
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar lista */}
@@ -367,6 +407,8 @@ function TriagePage() {
                 key={c.id}
                 case={c}
                 active={c.id === selectedId}
+                selected={selectedIds.has(c.id)}
+                onToggleSelect={(checked) => toggleSelect(c.id, checked)}
                 onClick={() => setSelectedId(c.id)}
               />
             ))
