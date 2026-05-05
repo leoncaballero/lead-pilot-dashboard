@@ -133,6 +133,10 @@ function TriagePage() {
   const [pending, setPending] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproveOpen, setBulkApproveOpen] = useState(false);
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
 
   const approveFn = useServerFn(approveCase);
   const rejectFn = useServerFn(rejectCase);
