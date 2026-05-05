@@ -95,7 +95,7 @@ function TriagePage() {
       setSelectedId(null);
       return;
     }
-    if (!cases.find((c) => c.id === selectedId)) {
+    if (!cases.find((c: TriageCase) => c.id === selectedId)) {
       setSelectedId(cases[0].id);
     }
   }, [cases, selectedId]);
@@ -109,7 +109,7 @@ function TriagePage() {
   }, [router]);
 
   const selectedIndex = useMemo(
-    () => cases.findIndex((c) => c.id === selectedId),
+    () => cases.findIndex((c: TriageCase) => c.id === selectedId),
     [cases, selectedId]
   );
   const selected = selectedIndex >= 0 ? cases[selectedIndex] : null;
@@ -136,7 +136,7 @@ function TriagePage() {
               No hay casos pendientes.
             </div>
           ) : (
-            cases.map((c) => (
+            cases.map((c: TriageCase) => (
               <CaseListItem
                 key={c.id}
                 case={c}
