@@ -1,5 +1,26 @@
 import { createServerFn } from "@tanstack/react-start";
 
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export type ClassificationOutput = {
+  patron?: string;
+  tono_lead?: string;
+  es_lead_valido?: boolean;
+  pidio_canal_directo?: boolean;
+  canal_pedido?: string;
+  notas?: string;
+  [key: string]: JsonValue | undefined;
+};
+
+export type ValidationOutput = {
+  score?: number;
+  validado?: boolean;
+  checks_pasados?: number;
+  checks_fallidos?: number;
+  [key: string]: JsonValue | undefined;
+};
+
 export type TriageCase = {
   id: string;
   smartlead_lead_id?: string | null;
@@ -11,10 +32,13 @@ export type TriageCase = {
   segmento?: string | null;
   patron?: string | null;
   turn_1_generated?: string | null;
+  classification_output?: ClassificationOutput | null;
+  validation_output?: ValidationOutput | null;
   score?: number | null;
   validado?: boolean | null;
+  errores_criticos?: string[] | null;
+  razones_fallo?: string[] | null;
   status?: string | null;
-  [key: string]: string | number | boolean | null | undefined;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
@@ -31,7 +55,7 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
 
     const params = new URLSearchParams({
       select:
-        "id,smartlead_lead_id,smartlead_thread_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,score,validado,status",
+        "id,smartlead_lead_id,smartlead_thread_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,classification_output,validation_output,score,validado,errores_criticos,razones_fallo,status",
       status: "eq.pending_review",
       score: "gte.85",
       order: "reply_timestamp.asc.nullslast",
