@@ -232,6 +232,116 @@ function TriagePage() {
     }
   }
 
+  function navigate(delta: number) {
+    if (cases.length === 0) return;
+    const idx = cases.findIndex((c: TriageCase) => c.id === selectedId);
+    const next = (idx + delta + cases.length) % cases.length;
+    setSelectedId(cases[next].id);
+  }
+
+  function toggleSelect(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function runBulk(
+    label: string,
+    ids: string[],
+    fn: (id: string) => Promise<unknown>
+  ) {
+    setPending(true);
+    let ok = 0;
+    let fail = 0;
+    for (const id of ids) {
+      try {
+        await fn(id);
+        ok++;
+      } catch (err) {
+        console.error(err);
+        fail++;
+      }
+    }
+    if (ok > 0) toast.success(`${label}: ${ok} ok${fail ? ` · ${fail} fallidos` : ""}`);
+    if (ok === 0 && fail > 0) toast.error(`${label}: todos fallaron (${fail})`);
+    clearSelection();
+    await router.invalidate();
+    setPending(false);
+  }
+
+  // Atajos de teclado
+  useEffect(() => {
+    function isTyping(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      );
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTyping(e.target)) return;
+      if (editOpen || confirmRejectOpen || bulkApproveOpen || bulkRejectOpen) return;
+
+      const k = e.key.toLowerCase();
+      if (k === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+      if (k === "j") {
+        e.preventDefault();
+        navigate(1);
+        return;
+      }
+      if (k === "k") {
+        e.preventDefault();
+        navigate(-1);
+        return;
+      }
+      if (!selected || pending) return;
+      if (k === "a") {
+        e.preventDefault();
+        runAction(
+          "Caso aprobado",
+          () =>
+            approveFn({
+              data: {
+                id: selected.id,
+                turn_1_generated: selected.turn_1_generated ?? "",
+              },
+            }),
+          selected.id
+        );
+      } else if (k === "e") {
+        e.preventDefault();
+        setEditOpen(true);
+      } else if (k === "r") {
+        e.preventDefault();
+        setConfirmRejectOpen(true);
+      } else if (k === "d") {
+        e.preventDefault();
+        runAction(
+          "Enviado a Revisión Profunda",
+          () => deepFn({ data: { id: selected.id } }),
+          selected.id
+        );
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
       <div className="flex items-baseline justify-between">
