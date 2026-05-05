@@ -125,7 +125,7 @@ function TriagePending() {
 // ---------- page ----------
 
 function TriagePage() {
-  const { cases } = Route.useLoaderData();
+  const { cases, realtime } = Route.useLoaderData();
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(
     cases[0]?.id ?? null
@@ -150,11 +150,47 @@ function TriagePage() {
     }
   }, [cases, selectedId]);
 
-  // Polling cada 5s
+  // Realtime: escuchar cambios y refrescar el loader
+  useEffect(() => {
+    if (!realtime) return;
+    let cancelled = false;
+    let cleanup: (() => void) | null = null;
+
+    (async () => {
+      const { createClient } = await import("@supabase/supabase-js");
+      if (cancelled) return;
+      const client = createClient(realtime.url, realtime.anonKey, {
+        auth: { persistSession: false },
+      });
+      const channel = client
+        .channel("triage-pipeline")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "cl001_p007_turn1_pipeline",
+          },
+          () => router.invalidate()
+        )
+        .subscribe();
+
+      cleanup = () => {
+        client.removeChannel(channel);
+      };
+    })();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [realtime, router]);
+
+  // Polling de respaldo cada 10s
   useEffect(() => {
     const id = setInterval(() => {
       router.invalidate();
-    }, 5000);
+    }, 10000);
     return () => clearInterval(id);
   }, [router]);
 
