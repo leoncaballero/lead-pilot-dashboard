@@ -35,7 +35,7 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
       throw new Error(`Outbound DB request failed [${res.status}]: ${body}`);
     }
 
-    const data = (await res.json()) as Array<Record<string, unknown>>;
+    const data = (await res.json()) as TriageCase[];
     return { cases: data };
   }
 );
