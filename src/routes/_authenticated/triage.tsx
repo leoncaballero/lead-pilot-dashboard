@@ -539,7 +539,9 @@ function TriagePage() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={() => {
                 const ids = Array.from(selectedIds);
-                const map = new Map(cases.map((c: TriageCase) => [c.id, c]));
+                const map = new Map<string, TriageCase>(
+                  cases.map((c: TriageCase) => [c.id, c])
+                );
                 runBulk("Aprobados", ids, (id) => {
                   const c = map.get(id);
                   return approveFn({
