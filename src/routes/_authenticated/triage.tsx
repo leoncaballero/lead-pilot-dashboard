@@ -80,7 +80,7 @@ function TriagePage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {cases.map((c) => (
+          {cases.map((c: TriageCase) => (
             <CaseCard key={c.id} case={c} />
           ))}
         </div>
