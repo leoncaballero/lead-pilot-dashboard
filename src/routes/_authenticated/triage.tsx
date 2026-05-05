@@ -30,6 +30,7 @@ import {
   approveCase,
   deepReviewCase,
   editCase,
+  getRealtimeConfig,
   getTriageCases,
   rejectCase,
   type TriageCase,
