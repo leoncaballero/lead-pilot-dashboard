@@ -1,10 +1,38 @@
 import { createFileRoute, ErrorComponent, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
+import { useServerFn } from "@tanstack/react-start";
+import {
+  approveCase,
+  deepReviewCase,
+  editCase,
   getTriageCases,
+  rejectCase,
   type TriageCase,
 } from "@/server/triage.functions";
 
@@ -62,7 +90,15 @@ function formatRel(min: number | null): string {
   return `hace ${h}h ${min % 60}m`;
 }
 
-// ---------- skeletons ----------
+const EDIT_REASONS = [
+  "Halago disfrazado",
+  "Jerga consultor",
+  "Tono no encaja",
+  "Estructura incorrecta",
+  "Saludo incorrecto",
+];
+
+// ---------- skeleton ----------
 
 function TriagePending() {
   return (
@@ -88,6 +124,14 @@ function TriagePage() {
   const [selectedId, setSelectedId] = useState<string | null>(
     cases[0]?.id ?? null
   );
+  const [pending, setPending] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
+
+  const approveFn = useServerFn(approveCase);
+  const rejectFn = useServerFn(rejectCase);
+  const deepFn = useServerFn(deepReviewCase);
+  const editFn = useServerFn(editCase);
 
   // Mantener selección válida cuando la lista cambia
   useEffect(() => {
@@ -114,6 +158,34 @@ function TriagePage() {
   );
   const selected = selectedIndex >= 0 ? cases[selectedIndex] : null;
 
+  function advanceAfter(currentId: string) {
+    const idx = cases.findIndex((c: TriageCase) => c.id === currentId);
+    const next =
+      cases[idx + 1] ?? cases.find((c: TriageCase) => c.id !== currentId) ?? null;
+    setSelectedId(next?.id ?? null);
+  }
+
+  async function runAction(
+    label: string,
+    fn: () => Promise<unknown>,
+    currentId: string
+  ) {
+    setPending(true);
+    try {
+      await fn();
+      toast.success(label);
+      advanceAfter(currentId);
+      await router.invalidate();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error ? err.message : "Error al ejecutar la acción"
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
       <div className="flex items-baseline justify-between">
@@ -132,9 +204,7 @@ function TriagePage() {
         {/* Sidebar lista */}
         <aside className="w-[30%] min-w-[260px] flex flex-col gap-2 overflow-y-auto pr-1">
           {cases.length === 0 ? (
-            <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
-              No hay casos pendientes.
-            </div>
+            <EmptyQueue />
           ) : (
             cases.map((c: TriageCase) => (
               <CaseListItem
@@ -148,13 +218,46 @@ function TriagePage() {
         </aside>
 
         {/* Panel detalle */}
-        <section className="flex-1 min-w-0 overflow-y-auto rounded-lg border bg-card">
+        <section className="flex-1 min-w-0 overflow-hidden rounded-lg border bg-card flex flex-col">
           {selected ? (
-            <CaseDetail
-              case={selected}
-              index={selectedIndex}
-              total={cases.length}
-            />
+            <>
+              <div className="flex-1 overflow-y-auto">
+                <CaseDetail
+                  case={selected}
+                  index={selectedIndex}
+                  total={cases.length}
+                />
+              </div>
+              <ActionsFooter
+                disabled={pending}
+                onApprove={() =>
+                  runAction(
+                    "Caso aprobado",
+                    () =>
+                      approveFn({
+                        data: {
+                          id: selected.id,
+                          turn_1_generated: selected.turn_1_generated ?? "",
+                        },
+                      }),
+                    selected.id
+                  )
+                }
+                onEdit={() => setEditOpen(true)}
+                onReject={() => setConfirmRejectOpen(true)}
+                onDeepReview={() =>
+                  runAction(
+                    "Enviado a Revisión Profunda",
+                    () => deepFn({ data: { id: selected.id } }),
+                    selected.id
+                  )
+                }
+              />
+            </>
+          ) : cases.length === 0 ? (
+            <div className="flex h-full items-center justify-center p-12">
+              <EmptyQueue large />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center p-12 text-sm text-muted-foreground">
               Selecciona un caso
@@ -162,6 +265,81 @@ function TriagePage() {
           )}
         </section>
       </div>
+
+      {/* Modal confirm reject */}
+      <AlertDialog open={confirmRejectOpen} onOpenChange={setConfirmRejectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Rechazar este caso?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El caso quedará marcado como rechazado y no se enviará respuesta.
+              Esta acción no se puede deshacer desde aquí.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!selected) return;
+                runAction(
+                  "Caso rechazado",
+                  () => rejectFn({ data: { id: selected.id } }),
+                  selected.id
+                );
+              }}
+            >
+              Sí, rechazar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal edit */}
+      {selected && (
+        <EditDialog
+          key={selected.id}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          caseItem={selected}
+          disabled={pending}
+          onSave={async ({ edited, reasons, otherReason }) => {
+            await runAction(
+              "Caso editado y enviado",
+              () =>
+                editFn({
+                  data: {
+                    id: selected.id,
+                    original: selected.turn_1_generated ?? "",
+                    edited,
+                    reasons,
+                    otherReason,
+                  },
+                }),
+              selected.id
+            );
+            setEditOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------- empty state ----------
+
+function EmptyQueue({ large = false }: { large?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border bg-card text-center text-muted-foreground",
+        large ? "p-12" : "p-6"
+      )}
+    >
+      <div className={cn("font-semibold", large ? "text-2xl" : "text-base")}>
+        🎉 Cola vacía
+      </div>
+      <p className="mt-2 text-sm">No hay casos pendientes ahora mismo.</p>
     </div>
   );
 }
@@ -240,16 +418,13 @@ function CaseDetail({
       : null;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Top */}
+    <div className="flex flex-col">
       <div className="border-b p-6">
         <div className="flex items-center justify-between">
           <div className="text-xs font-medium text-muted-foreground">
             {index + 1}/{total}
           </div>
-          {c.patron && (
-            <Badge variant="outline">Patrón {c.patron}</Badge>
-          )}
+          {c.patron && <Badge variant="outline">Patrón {c.patron}</Badge>}
         </div>
         <div className="mt-2 flex items-end justify-between gap-4">
           <div className="min-w-0">
@@ -268,12 +443,10 @@ function CaseDetail({
         </div>
       </div>
 
-      {/* Sections */}
-      <div className="flex-1 space-y-6 p-6">
-        {/* Reply original */}
+      <div className="space-y-6 p-6">
         <Section title="Reply original">
           {c.reply_original ? (
-            <blockquote className="border-l-4 border-muted-foreground/30 pl-4 text-sm italic text-foreground">
+            <blockquote className="border-l-4 border-muted-foreground/30 pl-4 text-sm italic text-foreground whitespace-pre-wrap">
               {c.reply_original}
             </blockquote>
           ) : (
@@ -284,7 +457,6 @@ function CaseDetail({
           </p>
         </Section>
 
-        {/* Clasificación IA */}
         <Section title="Clasificación IA">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Field label="Patrón" value={cls.patron ?? c.patron ?? "—"} />
@@ -304,7 +476,6 @@ function CaseDetail({
           )}
         </Section>
 
-        {/* Turn 1 generado */}
         <Section title="Turn 1 Generado">
           {c.turn_1_generated ? (
             <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-sm leading-relaxed text-foreground">
@@ -315,7 +486,6 @@ function CaseDetail({
           )}
         </Section>
 
-        {/* Validación IA */}
         <Section title="Validación IA">
           <div className="flex items-baseline gap-3">
             <span className={cn("text-4xl font-bold", scoreColor(c.score))}>
@@ -374,14 +544,174 @@ function CaseDetail({
           )}
         </Section>
       </div>
-
-      {/* Footer */}
-      <div className="border-t bg-muted/30 px-6 py-4 text-xs text-muted-foreground">
-        Acciones próximas: Aprobar / Editar / Rechazar / Revisión profunda
-      </div>
     </div>
   );
 }
+
+// ---------- actions footer ----------
+
+function ActionsFooter({
+  disabled,
+  onApprove,
+  onEdit,
+  onReject,
+  onDeepReview,
+}: {
+  disabled: boolean;
+  onApprove: () => void;
+  onEdit: () => void;
+  onReject: () => void;
+  onDeepReview: () => void;
+}) {
+  return (
+    <div className="border-t bg-muted/30 p-4 grid grid-cols-4 gap-2">
+      <Button
+        size="lg"
+        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+        onClick={onApprove}
+        disabled={disabled}
+      >
+        ✅ Aprobar
+      </Button>
+      <Button size="lg" variant="secondary" onClick={onEdit} disabled={disabled}>
+        ✏️ Editar
+      </Button>
+      <Button
+        size="lg"
+        variant="destructive"
+        onClick={onReject}
+        disabled={disabled}
+      >
+        🚫 Rechazar
+      </Button>
+      <Button size="lg" variant="outline" onClick={onDeepReview} disabled={disabled}>
+        🔍 Revisión Profunda
+      </Button>
+    </div>
+  );
+}
+
+// ---------- edit dialog ----------
+
+function EditDialog({
+  open,
+  onOpenChange,
+  caseItem,
+  disabled,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  caseItem: TriageCase;
+  disabled: boolean;
+  onSave: (data: {
+    edited: string;
+    reasons: string[];
+    otherReason?: string;
+  }) => Promise<void> | void;
+}) {
+  const [text, setText] = useState(caseItem.turn_1_generated ?? "");
+  const [reasons, setReasons] = useState<string[]>([]);
+  const [otherChecked, setOtherChecked] = useState(false);
+  const [otherText, setOtherText] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setText(caseItem.turn_1_generated ?? "");
+      setReasons([]);
+      setOtherChecked(false);
+      setOtherText("");
+    }
+  }, [open, caseItem]);
+
+  const lines = text.split("\n").length;
+  const chars = text.length;
+
+  function toggle(reason: string, checked: boolean) {
+    setReasons((prev) =>
+      checked ? [...prev, reason] : prev.filter((r) => r !== reason)
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            Editar Turn 1 — {caseItem.lead_name || caseItem.lead_email || caseItem.id}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={12}
+              className="font-mono text-sm"
+            />
+            <div className="mt-1 flex justify-end gap-3 text-xs text-muted-foreground">
+              <span>{chars} caracteres</span>
+              <span>{lines} líneas</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="mb-2 text-sm font-medium">Razones de edición</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {EDIT_REASONS.map((r) => (
+                <label
+                  key={r}
+                  className="flex items-center gap-2 text-sm cursor-pointer"
+                >
+                  <Checkbox
+                    checked={reasons.includes(r)}
+                    onCheckedChange={(v) => toggle(r, v === true)}
+                  />
+                  {r}
+                </label>
+              ))}
+              <label className="col-span-2 flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={otherChecked}
+                  onCheckedChange={(v) => setOtherChecked(v === true)}
+                />
+                <span className="shrink-0">Otro:</span>
+                <Input
+                  value={otherText}
+                  onChange={(e) => setOtherText(e.target.value)}
+                  disabled={!otherChecked}
+                  placeholder="Especifica…"
+                  className="h-8"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            disabled={disabled || text.trim().length === 0}
+            onClick={() =>
+              onSave({
+                edited: text,
+                reasons,
+                otherReason: otherChecked ? otherText.trim() || undefined : undefined,
+              })
+            }
+          >
+            Guardar y enviar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- shared ----------
 
 function Section({
   title,
@@ -412,3 +742,6 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function Empty() {
   return <p className="text-sm italic text-muted-foreground">Sin contenido.</p>;
 }
+
+// suppress unused import warning when Label is conditionally referenced
+void Label;
