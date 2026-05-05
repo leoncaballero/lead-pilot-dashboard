@@ -547,48 +547,63 @@ function EmptyQueue({ large = false }: { large?: boolean }) {
 function CaseListItem({
   case: c,
   active,
+  selected,
+  onToggleSelect,
   onClick,
 }: {
   case: TriageCase;
   active: boolean;
+  selected: boolean;
+  onToggleSelect: (checked: boolean) => void;
   onClick: () => void;
 }) {
   const min = minutesSince(c.reply_timestamp);
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={cn(
-        "w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50",
+        "flex gap-2 w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50 cursor-pointer",
         active && "border-primary bg-accent"
       )}
+      onClick={onClick}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">
-            {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
-          </div>
-          {c.lead_email && (
-            <div className="truncate text-xs text-muted-foreground">
-              {c.lead_email}
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {typeof c.score === "number" && (
-            <span className={cn("text-xs font-semibold", scoreColor(c.score))}>
-              {c.score}
-            </span>
-          )}
-          {c.patron && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              {c.patron}
-            </Badge>
-          )}
-        </div>
+      <div
+        className="flex items-start pt-0.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          checked={selected}
+          onCheckedChange={(v) => onToggleSelect(v === true)}
+          aria-label="Seleccionar caso"
+        />
       </div>
-      <div className={cn("mt-2 text-xs", slaColor(min))}>{formatRel(min)}</div>
-    </button>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">
+              {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
+            </div>
+            {c.lead_email && (
+              <div className="truncate text-xs text-muted-foreground">
+                {c.lead_email}
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            {typeof c.score === "number" && (
+              <span className={cn("text-xs font-semibold", scoreColor(c.score))}>
+                {c.score}
+              </span>
+            )}
+            {c.patron && (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                {c.patron}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className={cn("mt-2 text-xs", slaColor(min))}>{formatRel(min)}</div>
+      </div>
+    </div>
   );
 }
 
