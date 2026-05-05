@@ -14,7 +14,7 @@ export type TriageCase = {
   created_at?: string | null;
   attended_at?: string | null;
   attended_by?: string | null;
-  [key: string]: unknown;
+  [key: string]: string | number | boolean | null | undefined;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
