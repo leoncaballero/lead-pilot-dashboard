@@ -44,7 +44,7 @@ export type TriageCase = {
 const TABLE = "cl001_p007_turn1_pipeline";
 
 export const getTriageCases = createServerFn({ method: "GET" }).handler(
-  async () => {
+  async (): Promise<{ cases: TriageCase[] }> => {
     const url = process.env.OUTBOUND_SUPABASE_URL;
     const key = process.env.OUTBOUND_SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) {
