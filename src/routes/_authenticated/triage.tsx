@@ -742,5 +742,3 @@ function Empty() {
   return <p className="text-sm italic text-muted-foreground">Sin contenido.</p>;
 }
 
-// suppress unused import warning when Label is conditionally referenced
-void Label;
