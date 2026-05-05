@@ -133,6 +133,10 @@ function TriagePage() {
   const [pending, setPending] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproveOpen, setBulkApproveOpen] = useState(false);
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
 
   const approveFn = useServerFn(approveCase);
   const rejectFn = useServerFn(rejectCase);
@@ -228,6 +232,116 @@ function TriagePage() {
     }
   }
 
+  function navigate(delta: number) {
+    if (cases.length === 0) return;
+    const idx = cases.findIndex((c: TriageCase) => c.id === selectedId);
+    const next = (idx + delta + cases.length) % cases.length;
+    setSelectedId(cases[next].id);
+  }
+
+  function toggleSelect(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function runBulk(
+    label: string,
+    ids: string[],
+    fn: (id: string) => Promise<unknown>
+  ) {
+    setPending(true);
+    let ok = 0;
+    let fail = 0;
+    for (const id of ids) {
+      try {
+        await fn(id);
+        ok++;
+      } catch (err) {
+        console.error(err);
+        fail++;
+      }
+    }
+    if (ok > 0) toast.success(`${label}: ${ok} ok${fail ? ` · ${fail} fallidos` : ""}`);
+    if (ok === 0 && fail > 0) toast.error(`${label}: todos fallaron (${fail})`);
+    clearSelection();
+    await router.invalidate();
+    setPending(false);
+  }
+
+  // Atajos de teclado
+  useEffect(() => {
+    function isTyping(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      );
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTyping(e.target)) return;
+      if (editOpen || confirmRejectOpen || bulkApproveOpen || bulkRejectOpen) return;
+
+      const k = e.key.toLowerCase();
+      if (k === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+      if (k === "j") {
+        e.preventDefault();
+        navigate(1);
+        return;
+      }
+      if (k === "k") {
+        e.preventDefault();
+        navigate(-1);
+        return;
+      }
+      if (!selected || pending) return;
+      if (k === "a") {
+        e.preventDefault();
+        runAction(
+          "Caso aprobado",
+          () =>
+            approveFn({
+              data: {
+                id: selected.id,
+                turn_1_generated: selected.turn_1_generated ?? "",
+              },
+            }),
+          selected.id
+        );
+      } else if (k === "e") {
+        e.preventDefault();
+        setEditOpen(true);
+      } else if (k === "r") {
+        e.preventDefault();
+        setConfirmRejectOpen(true);
+      } else if (k === "d") {
+        e.preventDefault();
+        runAction(
+          "Enviado a Revisión Profunda",
+          () => deepFn({ data: { id: selected.id } }),
+          selected.id
+        );
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
       <div className="flex items-baseline justify-between">
@@ -237,10 +351,50 @@ function TriagePage() {
             Casos pendientes con score 85–94, ordenados por antigüedad.
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
-          {cases.length} caso{cases.length === 1 ? "" : "s"}
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            className="rounded border px-2 py-1 text-xs hover:bg-accent"
+            title="Atajos de teclado"
+          >
+            ? Atajos
+          </button>
+          <span>
+            {cases.length} caso{cases.length === 1 ? "" : "s"}
+          </span>
         </div>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border bg-accent/40 px-4 py-2">
+          <div className="text-sm font-medium">
+            {selectedIds.size} caso{selectedIds.size === 1 ? "" : "s"} seleccionado
+            {selectedIds.size === 1 ? "" : "s"}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={pending}
+              onClick={() => setBulkApproveOpen(true)}
+            >
+              ✅ Aprobar todos
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={pending}
+              onClick={() => setBulkRejectOpen(true)}
+            >
+              🚫 Rechazar todos
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>
+              Deseleccionar
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar lista */}
@@ -253,6 +407,8 @@ function TriagePage() {
                 key={c.id}
                 case={c}
                 active={c.id === selectedId}
+                selected={selectedIds.has(c.id)}
+                onToggleSelect={(checked) => toggleSelect(c.id, checked)}
                 onClick={() => setSelectedId(c.id)}
               />
             ))
@@ -364,7 +520,103 @@ function TriagePage() {
           }}
         />
       )}
+
+      {/* Bulk approve */}
+      <AlertDialog open={bulkApproveOpen} onOpenChange={setBulkApproveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Aprobar {selectedIds.size} casos sin revisarlos individualmente?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se marcarán como aprobados con el Turn 1 generado tal cual y pasarán
+              al estado <code>ready_to_send</code>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => {
+                const ids = Array.from(selectedIds);
+                const map = new Map<string, TriageCase>(
+                  cases.map((c: TriageCase) => [c.id, c])
+                );
+                runBulk("Aprobados", ids, (id) => {
+                  const c = map.get(id);
+                  return approveFn({
+                    data: { id, turn_1_generated: c?.turn_1_generated ?? "" },
+                  });
+                });
+              }}
+            >
+              Sí, aprobar todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk reject */}
+      <AlertDialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Rechazar {selectedIds.size} casos? Esta acción es destructiva.
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Todos los casos seleccionados quedarán marcados como rechazados y no
+              se enviará respuesta. No se puede deshacer desde aquí.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const ids = Array.from(selectedIds);
+                runBulk("Rechazados", ids, (id) =>
+                  rejectFn({ data: { id } })
+                );
+              }}
+            >
+              Sí, rechazar todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Shortcuts overlay */}
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Atajos de teclado</DialogTitle>
+          </DialogHeader>
+          <ul className="space-y-2 text-sm">
+            <ShortcutRow keys="J" label="Siguiente caso" />
+            <ShortcutRow keys="K" label="Caso anterior" />
+            <ShortcutRow keys="A" label="Aprobar caso actual" />
+            <ShortcutRow keys="E" label="Editar caso actual" />
+            <ShortcutRow keys="R" label="Rechazar caso actual" />
+            <ShortcutRow keys="D" label="Revisión profunda" />
+            <ShortcutRow keys="?" label="Mostrar/ocultar esta ayuda" />
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            Los atajos se desactivan mientras escribes en un campo de texto.
+          </p>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function ShortcutRow({ keys, label }: { keys: string; label: string }) {
+  return (
+    <li className="flex items-center justify-between">
+      <span>{label}</span>
+      <kbd className="rounded border bg-muted px-2 py-0.5 text-xs font-mono">
+        {keys}
+      </kbd>
+    </li>
   );
 }
 
@@ -391,48 +643,63 @@ function EmptyQueue({ large = false }: { large?: boolean }) {
 function CaseListItem({
   case: c,
   active,
+  selected,
+  onToggleSelect,
   onClick,
 }: {
   case: TriageCase;
   active: boolean;
+  selected: boolean;
+  onToggleSelect: (checked: boolean) => void;
   onClick: () => void;
 }) {
   const min = minutesSince(c.reply_timestamp);
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={cn(
-        "w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50",
+        "flex gap-2 w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50 cursor-pointer",
         active && "border-primary bg-accent"
       )}
+      onClick={onClick}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">
-            {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
-          </div>
-          {c.lead_email && (
-            <div className="truncate text-xs text-muted-foreground">
-              {c.lead_email}
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {typeof c.score === "number" && (
-            <span className={cn("text-xs font-semibold", scoreColor(c.score))}>
-              {c.score}
-            </span>
-          )}
-          {c.patron && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              {c.patron}
-            </Badge>
-          )}
-        </div>
+      <div
+        className="flex items-start pt-0.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          checked={selected}
+          onCheckedChange={(v) => onToggleSelect(v === true)}
+          aria-label="Seleccionar caso"
+        />
       </div>
-      <div className={cn("mt-2 text-xs", slaColor(min))}>{formatRel(min)}</div>
-    </button>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">
+              {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
+            </div>
+            {c.lead_email && (
+              <div className="truncate text-xs text-muted-foreground">
+                {c.lead_email}
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            {typeof c.score === "number" && (
+              <span className={cn("text-xs font-semibold", scoreColor(c.score))}>
+                {c.score}
+              </span>
+            )}
+            {c.patron && (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                {c.patron}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className={cn("mt-2 text-xs", slaColor(min))}>{formatRel(min)}</div>
+      </div>
+    </div>
   );
 }
 
@@ -606,29 +873,39 @@ function ActionsFooter({
   onDeepReview: () => void;
 }) {
   return (
-    <div className="border-t bg-muted/30 p-4 grid grid-cols-4 gap-2">
-      <Button
-        size="lg"
-        className="bg-emerald-600 hover:bg-emerald-700 text-white"
-        onClick={onApprove}
-        disabled={disabled}
-      >
-        ✅ Aprobar
-      </Button>
-      <Button size="lg" variant="secondary" onClick={onEdit} disabled={disabled}>
-        ✏️ Editar
-      </Button>
-      <Button
-        size="lg"
-        variant="destructive"
-        onClick={onReject}
-        disabled={disabled}
-      >
-        🚫 Rechazar
-      </Button>
-      <Button size="lg" variant="outline" onClick={onDeepReview} disabled={disabled}>
-        🔍 Revisión Profunda
-      </Button>
+    <div className="border-t bg-muted/30">
+      <div className="grid grid-cols-4 gap-2 p-4">
+        <Button
+          size="lg"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          onClick={onApprove}
+          disabled={disabled}
+        >
+          ✅ Aprobar
+        </Button>
+        <Button size="lg" variant="secondary" onClick={onEdit} disabled={disabled}>
+          ✏️ Editar
+        </Button>
+        <Button
+          size="lg"
+          variant="destructive"
+          onClick={onReject}
+          disabled={disabled}
+        >
+          🚫 Rechazar
+        </Button>
+        <Button size="lg" variant="outline" onClick={onDeepReview} disabled={disabled}>
+          🔍 Revisión Profunda
+        </Button>
+      </div>
+      <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+        Atajos: <kbd className="rounded border bg-background px-1">J/K</kbd> navegar ·{" "}
+        <kbd className="rounded border bg-background px-1">A</kbd> aprobar ·{" "}
+        <kbd className="rounded border bg-background px-1">E</kbd> editar ·{" "}
+        <kbd className="rounded border bg-background px-1">R</kbd> rechazar ·{" "}
+        <kbd className="rounded border bg-background px-1">D</kbd> profunda ·{" "}
+        <kbd className="rounded border bg-background px-1">?</kbd> ayuda
+      </div>
     </div>
   );
 }
