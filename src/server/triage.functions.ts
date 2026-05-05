@@ -1,5 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 
+export type TriageCase = {
+  id: string;
+  smartlead_lead_id?: string | null;
+  smartlead_thread_id?: string | null;
+  status?: string | null;
+  score?: number | null;
+  pattern?: string | null;
+  lead_name?: string | null;
+  lead_email?: string | null;
+  original_reply?: string | null;
+  generated_reply?: string | null;
+  created_at?: string | null;
+  attended_at?: string | null;
+  attended_by?: string | null;
+  [key: string]: unknown;
+};
+
 const TABLE = "cl001_p007_turn1_pipeline";
 
 export const getTriageCases = createServerFn({ method: "GET" }).handler(
