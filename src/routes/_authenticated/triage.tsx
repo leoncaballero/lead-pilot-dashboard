@@ -520,7 +520,101 @@ function TriagePage() {
           }}
         />
       )}
+
+      {/* Bulk approve */}
+      <AlertDialog open={bulkApproveOpen} onOpenChange={setBulkApproveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Aprobar {selectedIds.size} casos sin revisarlos individualmente?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se marcarán como aprobados con el Turn 1 generado tal cual y pasarán
+              al estado <code>ready_to_send</code>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => {
+                const ids = Array.from(selectedIds);
+                const map = new Map(cases.map((c: TriageCase) => [c.id, c]));
+                runBulk("Aprobados", ids, (id) => {
+                  const c = map.get(id);
+                  return approveFn({
+                    data: { id, turn_1_generated: c?.turn_1_generated ?? "" },
+                  });
+                });
+              }}
+            >
+              Sí, aprobar todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk reject */}
+      <AlertDialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Rechazar {selectedIds.size} casos? Esta acción es destructiva.
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Todos los casos seleccionados quedarán marcados como rechazados y no
+              se enviará respuesta. No se puede deshacer desde aquí.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const ids = Array.from(selectedIds);
+                runBulk("Rechazados", ids, (id) =>
+                  rejectFn({ data: { id } })
+                );
+              }}
+            >
+              Sí, rechazar todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Shortcuts overlay */}
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Atajos de teclado</DialogTitle>
+          </DialogHeader>
+          <ul className="space-y-2 text-sm">
+            <ShortcutRow keys="J" label="Siguiente caso" />
+            <ShortcutRow keys="K" label="Caso anterior" />
+            <ShortcutRow keys="A" label="Aprobar caso actual" />
+            <ShortcutRow keys="E" label="Editar caso actual" />
+            <ShortcutRow keys="R" label="Rechazar caso actual" />
+            <ShortcutRow keys="D" label="Revisión profunda" />
+            <ShortcutRow keys="?" label="Mostrar/ocultar esta ayuda" />
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            Los atajos se desactivan mientras escribes en un campo de texto.
+          </p>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function ShortcutRow({ keys, label }: { keys: string; label: string }) {
+  return (
+    <li className="flex items-center justify-between">
+      <span>{label}</span>
+      <kbd className="rounded border bg-muted px-2 py-0.5 text-xs font-mono">
+        {keys}
+      </kbd>
+    </li>
   );
 }
 
