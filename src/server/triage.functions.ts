@@ -96,6 +96,15 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
   }
 );
 
+export const getRealtimeConfig = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ url: string; anonKey: string } | null> => {
+    const url = process.env.OUTBOUND_SUPABASE_URL;
+    const anonKey = process.env.OUTBOUND_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) return null;
+    return { url: url.replace(/\/$/, ""), anonKey };
+  }
+);
+
 async function logEvent(
   caseId: string,
   eventType: string,
