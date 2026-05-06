@@ -18,6 +18,10 @@ export type ValidationOutput = {
   validado?: boolean;
   checks_pasados?: number;
   checks_fallidos?: number;
+  checks?: Record<string, boolean>;
+  errores_criticos?: string[];
+  razones_fallo?: string[];
+  comentarios_adicionales?: string | null;
   [key: string]: JsonValue | undefined;
 };
 
@@ -39,6 +43,7 @@ export type TriageCase = {
   errores_criticos?: string[] | null;
   razones_fallo?: string[] | null;
   status?: string | null;
+  created_at?: string | null;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
@@ -113,14 +118,15 @@ async function triggerSendWebhook(pipelineId: string): Promise<void> {
 
 export const getTriageCases = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ cases: TriageCase[] }> => {
+    // Modo "humano siempre revisa": mostrar TODOS los casos pending_review,
+    // sin filtrar por score. La UI los agrupa visualmente por nivel de confianza.
+    // Orden: más recientes primero (en lugar del antiguo asc por antigüedad).
     const params = new URLSearchParams({
       select:
-        "id,smartlead_lead_id,smartlead_thread_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,classification_output,validation_output,score,validado,errores_criticos,razones_fallo,status",
+        "id,smartlead_lead_id,smartlead_thread_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,classification_output,validation_output,score,validado,errores_criticos,razones_fallo,status,created_at",
       status: "eq.pending_review",
-      score: "gte.85",
-      order: "reply_timestamp.asc.nullslast",
+      order: "created_at.desc.nullslast",
     });
-    params.append("score", "lte.94");
     const data = (await pgrest(`${TABLE}?${params.toString()}`, {
       method: "GET",
     })) as TriageCase[];

@@ -83,10 +83,67 @@ function slaColor(min: number | null): string {
 
 function scoreColor(score?: number | null): string {
   if (typeof score !== "number") return "text-muted-foreground";
-  if (score >= 92) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 95) return "text-emerald-600 dark:text-emerald-400";
   if (score >= 85) return "text-amber-600 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
 }
+
+type Confidence = {
+  level: "high" | "medium" | "low";
+  label: string;
+  short: string;
+  hint: string;
+  pillClasses: string;
+  borderClasses: string;
+};
+
+function confidenceLevel(c: TriageCase): Confidence {
+  const score = typeof c.score === "number" ? c.score : 0;
+  const criticos = c.errores_criticos?.length ?? 0;
+  if (criticos >= 1) {
+    return {
+      level: "low",
+      label: "Confianza baja",
+      short: "Revisar a fondo",
+      hint: `${criticos} error${criticos === 1 ? "" : "es"} crítico${criticos === 1 ? "" : "s"} detectado${criticos === 1 ? "" : "s"}`,
+      pillClasses: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800",
+      borderClasses: "border-red-200 dark:border-red-800/60",
+    };
+  }
+  if (score >= 95) {
+    return {
+      level: "high",
+      label: "Confianza alta",
+      short: "Revisión rápida",
+      hint: "Score ≥95 sin críticos. Listo para enviar tras vistazo rápido.",
+      pillClasses: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800",
+      borderClasses: "border-emerald-200 dark:border-emerald-800/60",
+    };
+  }
+  return {
+    level: "medium",
+    label: "Confianza media",
+    short: "Revisar",
+    hint: "Score entre 85 y 94. Cumple validación pero merece atención.",
+    pillClasses: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800",
+    borderClasses: "border-amber-200 dark:border-amber-800/60",
+  };
+}
+
+const CHECK_LABELS: Record<string, string> = {
+  personalizacion_funcional: "Personalización funcional",
+  sin_halago_disfrazado: "Sin halago disfrazado",
+  lenguaje_cotidiano: "Lenguaje cotidiano",
+  patron_correcto_segun_clasificacion: "Patrón correcto",
+  cuerpo_emocional_aspiracional_correcto: "Cuerpo emocional MEGA",
+  punto_salto_linea: "Saltos de línea (\\n\\n)",
+  longitud_apropiada: "Longitud apropiada",
+  sin_jerga_consultor: "Sin jerga de consultor",
+  status_frame_alto: "Status frame alto",
+  sin_construcciones_lista_negra: "Sin construcciones prohibidas",
+  tratamiento_singular_correcto: "Tratamiento singular",
+  formato_firma_correcto: "Firma correcta",
+};
 
 function formatRel(min: number | null): string {
   if (min === null) return "—";
@@ -348,10 +405,11 @@ function TriagePage() {
         <div>
           <h1 className="text-2xl font-semibold">Triage Rápido</h1>
           <p className="text-sm text-muted-foreground">
-            Casos pendientes con score 85–94, ordenados por antigüedad.
+            Todos los casos pendientes de revisión humana. Ordenados por más recientes.
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <ConfidenceLegend cases={cases} />
           <button
             type="button"
             onClick={() => setShortcutsOpen(true)}
@@ -654,10 +712,12 @@ function CaseListItem({
   onClick: () => void;
 }) {
   const min = minutesSince(c.reply_timestamp);
+  const conf = confidenceLevel(c);
   return (
     <div
       className={cn(
         "flex gap-2 w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50 cursor-pointer",
+        conf.borderClasses,
         active && "border-primary bg-accent"
       )}
       onClick={onClick}
@@ -697,8 +757,36 @@ function CaseListItem({
             )}
           </div>
         </div>
-        <div className={cn("mt-2 text-xs", slaColor(min))}>{formatRel(min)}</div>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", conf.pillClasses)}>
+            {conf.short}
+          </span>
+          <span className={cn("text-xs", slaColor(min))}>{formatRel(min)}</span>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ConfidenceLegend({ cases }: { cases: TriageCase[] }) {
+  const counts = { high: 0, medium: 0, low: 0 };
+  for (const c of cases) {
+    counts[confidenceLevel(c).level] += 1;
+  }
+  return (
+    <div className="hidden md:flex items-center gap-2 text-[11px]">
+      <span className="inline-flex items-center gap-1">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        <span>{counts.high} alta</span>
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="h-2 w-2 rounded-full bg-amber-500" />
+        <span>{counts.medium} media</span>
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="h-2 w-2 rounded-full bg-red-500" />
+        <span>{counts.low} baja</span>
+      </span>
     </div>
   );
 }
@@ -726,6 +814,10 @@ function CaseDetail({
       ? Math.max(0, 12 - checksPasados)
       : null;
 
+  const conf = confidenceLevel(c);
+  const checks = (val.checks ?? null) as Record<string, boolean> | null;
+  const comentariosValidador = typeof val.comentarios_adicionales === "string" ? val.comentarios_adicionales : null;
+
   return (
     <div className="flex flex-col">
       <div className="border-b p-6">
@@ -733,7 +825,12 @@ function CaseDetail({
           <div className="text-xs font-medium text-muted-foreground">
             {index + 1}/{total}
           </div>
-          {c.patron && <Badge variant="outline">Patrón {c.patron}</Badge>}
+          <div className="flex items-center gap-2">
+            <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", conf.pillClasses)}>
+              {conf.label}
+            </span>
+            {c.patron && <Badge variant="outline">Patrón {c.patron}</Badge>}
+          </div>
         </div>
         <div className="mt-2 flex items-end justify-between gap-4">
           <div className="min-w-0">
@@ -750,6 +847,7 @@ function CaseDetail({
             En cola: {min === null ? "—" : `${min} min`}
           </div>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">{conf.hint}</p>
       </div>
 
       <div className="space-y-6 p-6">
@@ -849,6 +947,54 @@ function CaseDetail({
                   <li key={i}>{r}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {checks && Object.keys(checks).length > 0 && (
+            <div className="mt-4">
+              <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                Detalle de los 12 checks
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                {Object.entries(CHECK_LABELS).map(([key, label]) => {
+                  const passed = checks[key];
+                  const known = passed !== undefined;
+                  return (
+                    <div
+                      key={key}
+                      className={cn(
+                        "flex items-center gap-2 text-xs",
+                        !known && "text-muted-foreground",
+                        known && passed && "text-emerald-700 dark:text-emerald-400",
+                        known && !passed && "text-red-700 dark:text-red-400"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold leading-none",
+                          known && passed && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40",
+                          known && !passed && "bg-red-100 text-red-700 dark:bg-red-900/40",
+                          !known && "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {known ? (passed ? "✓" : "✗") : "?"}
+                      </span>
+                      <span>{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {comentariosValidador && (
+            <div className="mt-4 rounded-md bg-muted/40 p-3">
+              <h4 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                Comentarios del Validador
+              </h4>
+              <p className="text-sm text-foreground whitespace-pre-wrap">
+                {comentariosValidador}
+              </p>
             </div>
           )}
         </Section>
