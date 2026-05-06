@@ -253,7 +253,7 @@ function DeepReviewPage() {
                           Errores críticos
                         </div>
                         <ul className="list-disc pl-5 text-sm text-red-600 dark:text-red-400">
-                          {selected.errores_criticos.map((e, i) => <li key={i}>{e}</li>)}
+                          {selected.errores_criticos.map((e: string, i: number) => <li key={i}>{e}</li>)}
                         </ul>
                       </div>
                     )}
@@ -263,7 +263,7 @@ function DeepReviewPage() {
                           Razones de fallo
                         </div>
                         <ul className="list-disc pl-5 text-sm text-muted-foreground">
-                          {selected.razones_fallo.map((r, i) => <li key={i}>{r}</li>)}
+                          {selected.razones_fallo.map((r: string, i: number) => <li key={i}>{r}</li>)}
                         </ul>
                       </div>
                     )}
