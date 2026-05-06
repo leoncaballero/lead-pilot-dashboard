@@ -78,8 +78,8 @@ export type HistoryFilters = {
 };
 
 export const getHistoryCases = createServerFn({ method: "GET" })
-  .inputValidator((data: HistoryFilters | undefined) => data ?? {})
-  .handler(async ({ data }): Promise<{ cases: HistoryCase[]; total: number | null }> => {
+  .inputValidator((data: HistoryFilters) => data)
+  .handler(async ({ data }) => {
     const limit = Math.min(Math.max(data.limit ?? 100, 1), 500);
     const offset = Math.max(data.offset ?? 0, 0);
 

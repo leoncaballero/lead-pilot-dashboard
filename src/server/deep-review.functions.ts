@@ -4,7 +4,7 @@ type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 import type { TriageCase } from "./triage.functions";
-export type { TriageCase as DeepReviewCase };
+export type DeepReviewCase = TriageCase;
 
 const TABLE = "cl001_p007_turn1_pipeline";
 const ACTIVITY_TABLE = "cl001_p007_activity_events";
