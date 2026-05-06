@@ -195,15 +195,43 @@ export const approveCase = createServerFn({ method: "POST" })
   });
 
 export const rejectCase = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .inputValidator(
+    (data: { id: string; reasons?: string[]; otherReason?: string }) => data
+  )
   .handler(async ({ data }) => {
+    const allReasons = [
+      ...(data.reasons ?? []),
+      ...(data.otherReason ? [`otro: ${data.otherReason}`] : []),
+    ];
     await updateCase(data.id, {
       sdr_action: "rejected",
       sdr_user_id: null,
       sdr_action_timestamp: new Date().toISOString(),
       status: "rejected",
+      // Guardamos las razones en edit_reason (mismo campo que ediciones — generico
+      // de "feedback del SDR sobre este caso") para no anadir columna nueva.
+      edit_reason: allReasons.length > 0 ? allReasons.join(", ") : null,
     });
-    await logEvent(data.id, "turn_1_rejected");
+
+    // Persistimos cada razon individual en edit_reasons para analytics
+    if (allReasons.length > 0) {
+      try {
+        await pgrest(EDIT_REASONS_TABLE, {
+          method: "POST",
+          prefer: "return=minimal",
+          body: JSON.stringify(
+            allReasons.map((reason) => ({
+              pipeline_id: data.id,
+              reason: `reject: ${reason}`,
+            }))
+          ),
+        });
+      } catch (err) {
+        console.error("edit_reasons insert failed (reject):", err);
+      }
+    }
+
+    await logEvent(data.id, "turn_1_rejected", { reasons: allReasons });
     // No se invoca el webhook: el caso queda como rejected sin envío.
     return { ok: true };
   });

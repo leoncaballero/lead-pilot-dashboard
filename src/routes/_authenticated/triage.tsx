@@ -1,5 +1,5 @@
 import { createFileRoute, ErrorComponent, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -203,6 +203,15 @@ const EDIT_REASONS = [
   "Tono no encaja",
   "Estructura incorrecta",
   "Saludo incorrecto",
+];
+
+const REJECT_REASONS = [
+  "Lead no es MEGA real (tiene tienda activa)",
+  "Reply OOO / autoreply / no es interés real",
+  "Lead hostil / pide unsubscribe",
+  "Idioma o contexto incorrecto",
+  "Reply ambiguo, prefiero no responder",
+  "Mejor llamada directa por SDR",
 ];
 
 // ---------- skeleton ----------
@@ -567,33 +576,23 @@ function TriagePage() {
       </div>
 
       {/* Modal confirm reject */}
-      <AlertDialog open={confirmRejectOpen} onOpenChange={setConfirmRejectOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Rechazar este caso?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El caso quedará marcado como rechazado y no se enviará respuesta.
-              Esta acción no se puede deshacer desde aquí.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (!selected) return;
-                runAction(
-                  "Caso rechazado",
-                  () => rejectFn({ data: { id: selected.id } }),
-                  selected.id
-                );
-              }}
-            >
-              Sí, rechazar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {selected && (
+        <RejectDialog
+          key={`reject-${selected.id}`}
+          open={confirmRejectOpen}
+          onOpenChange={setConfirmRejectOpen}
+          caseItem={selected}
+          disabled={pending}
+          onConfirm={async ({ reasons, otherReason }) => {
+            await runAction(
+              "Caso rechazado",
+              () => rejectFn({ data: { id: selected.id, reasons, otherReason } }),
+              selected.id
+            );
+            setConfirmRejectOpen(false);
+          }}
+        />
+      )}
 
       {/* Modal edit */}
       {selected && (
@@ -1121,7 +1120,8 @@ function EditDialog({
     otherReason?: string;
   }) => Promise<void> | void;
 }) {
-  const [text, setText] = useState(caseItem.turn_1_generated ?? "");
+  const original = caseItem.turn_1_generated ?? "";
+  const [text, setText] = useState(original);
   const [reasons, setReasons] = useState<string[]>([]);
   const [otherChecked, setOtherChecked] = useState(false);
   const [otherText, setOtherText] = useState("");
@@ -1137,6 +1137,12 @@ function EditDialog({
 
   const lines = text.split("\n").length;
   const chars = text.length;
+  const origLines = original.split("\n").length;
+  const origChars = original.length;
+  const charsDelta = chars - origChars;
+
+  // Diff line-a-linea para resaltar cambios visualmente
+  const diff = useMemo(() => computeLineDiff(original, text), [original, text]);
 
   function toggle(reason: string, checked: boolean) {
     setReasons((prev) =>
@@ -1144,9 +1150,23 @@ function EditDialog({
     );
   }
 
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    // Cmd/Ctrl+Enter para guardar rapidamente
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (!disabled && text.trim().length > 0) {
+        onSave({
+          edited: text,
+          reasons,
+          otherReason: otherChecked ? otherText.trim() || undefined : undefined,
+        });
+      }
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>
             Editar Turn 1 — {caseItem.lead_name || caseItem.lead_email || caseItem.id}
@@ -1154,16 +1174,51 @@ function EditDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div>
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={12}
-              className="font-mono text-sm"
-            />
-            <div className="mt-1 flex justify-end gap-3 text-xs text-muted-foreground">
-              <span>{chars} caracteres</span>
-              <span>{lines} líneas</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-medium uppercase text-muted-foreground">
+                  Original (IA)
+                </h4>
+                <span className="text-[10px] text-muted-foreground">
+                  {origChars} chars · {origLines} líneas
+                </span>
+              </div>
+              <div className="h-[320px] overflow-y-auto rounded-md border bg-muted/40 p-3 font-mono text-sm leading-relaxed">
+                {diff.left.map((row, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "whitespace-pre-wrap",
+                      row.changed && "bg-red-100/70 line-through decoration-red-400 dark:bg-red-950/30"
+                    )}
+                  >
+                    {row.text || " "}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-medium uppercase text-muted-foreground">
+                  Tu versión
+                </h4>
+                <span className="text-[10px] text-muted-foreground">
+                  {chars} chars · {lines} líneas{" "}
+                  {charsDelta !== 0 && (
+                    <span className={cn(charsDelta > 0 ? "text-emerald-600" : "text-amber-600")}>
+                      ({charsDelta > 0 ? "+" : ""}
+                      {charsDelta})
+                    </span>
+                  )}
+                </span>
+              </div>
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="h-[320px] resize-none font-mono text-sm leading-relaxed"
+              />
             </div>
           </div>
 
@@ -1200,26 +1255,178 @@ function EditDialog({
           </div>
         </div>
 
+        <DialogFooter className="items-center justify-between gap-2">
+          <span className="text-[10px] text-muted-foreground">
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">⌘ + Enter</kbd>{" "}
+            para guardar rápido
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={disabled || text.trim().length === 0}
+              onClick={() =>
+                onSave({
+                  edited: text,
+                  reasons,
+                  otherReason: otherChecked ? otherText.trim() || undefined : undefined,
+                })
+              }
+            >
+              Guardar y enviar
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RejectDialog({
+  open,
+  onOpenChange,
+  caseItem,
+  disabled,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  caseItem: TriageCase;
+  disabled: boolean;
+  onConfirm: (data: {
+    reasons: string[];
+    otherReason?: string;
+  }) => Promise<void> | void;
+}) {
+  const [reasons, setReasons] = useState<string[]>([]);
+  const [otherChecked, setOtherChecked] = useState(false);
+  const [otherText, setOtherText] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setReasons([]);
+      setOtherChecked(false);
+      setOtherText("");
+    }
+  }, [open, caseItem]);
+
+  function toggle(reason: string, checked: boolean) {
+    setReasons((prev) =>
+      checked ? [...prev, reason] : prev.filter((r) => r !== reason)
+    );
+  }
+
+  const hasReason =
+    reasons.length > 0 || (otherChecked && otherText.trim().length > 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>
+            Rechazar caso — {caseItem.lead_name || caseItem.lead_email || caseItem.id}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            El caso queda <code>rejected</code> y no se enviará respuesta. Selecciona
+            la razón principal — alimenta los analytics para mejorar prompts.
+          </p>
+          <div className="space-y-2">
+            {REJECT_REASONS.map((r) => (
+              <label
+                key={r}
+                className="flex items-center gap-2 text-sm cursor-pointer"
+              >
+                <Checkbox
+                  checked={reasons.includes(r)}
+                  onCheckedChange={(v) => toggle(r, v === true)}
+                />
+                {r}
+              </label>
+            ))}
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={otherChecked}
+                onCheckedChange={(v) => setOtherChecked(v === true)}
+              />
+              <span className="shrink-0">Otro:</span>
+              <Input
+                value={otherText}
+                onChange={(e) => setOtherText(e.target.value)}
+                disabled={!otherChecked}
+                placeholder="Especifica…"
+                className="h-8"
+              />
+            </label>
+          </div>
+        </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={disabled}>
             Cancelar
           </Button>
           <Button
-            disabled={disabled || text.trim().length === 0}
+            variant="destructive"
+            disabled={disabled || !hasReason}
             onClick={() =>
-              onSave({
-                edited: text,
+              onConfirm({
                 reasons,
                 otherReason: otherChecked ? otherText.trim() || undefined : undefined,
               })
             }
           >
-            Guardar y enviar
+            🚫 Rechazar
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Diff línea-a-línea simple (LCS). Devuelve para CADA lado un array de líneas
+ * con flag `changed` cuando la línea no aparece en el otro lado.
+ *
+ * Es más útil para textos cortos como un Turn 1 (3-8 líneas) que un diff
+ * por palabras, que se vuelve ruidoso.
+ */
+type DiffRow = { text: string; changed: boolean };
+type LineDiffResult = { left: DiffRow[]; right: DiffRow[] };
+
+function computeLineDiff(original: string, edited: string): LineDiffResult {
+  const a = original.split("\n");
+  const b = edited.split("\n");
+  // LCS table de longitudes (limitado a ~200 lineas; un Turn 1 nunca llega cerca)
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+      else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const inLcs: boolean[] = new Array(m).fill(false);
+  const inLcsB: boolean[] = new Array(n).fill(false);
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      inLcs[i] = true;
+      inLcsB[j] = true;
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  return {
+    left: a.map((text, idx) => ({ text, changed: !inLcs[idx] })),
+    right: b.map((text, idx) => ({ text, changed: !inLcsB[idx] })),
+  };
 }
 
 // ---------- shared ----------
