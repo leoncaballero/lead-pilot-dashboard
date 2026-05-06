@@ -39,6 +39,10 @@ export const Route = createRootRoute({
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Setting Pilot — Pipeline Control" },
+      { name: "twitter:description", content: "Cabina de mando para gestión de leads" },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d3df3269-9c7e-4f37-bb70-1b91076f9921/id-preview-85c21ed1--c0a2c782-539b-400b-92ae-ee41b37dc207.lovable.app-1778073731122.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/d3df3269-9c7e-4f37-bb70-1b91076f9921/id-preview-85c21ed1--c0a2c782-539b-400b-92ae-ee41b37dc207.lovable.app-1778073731122.png" },
     ],
     links: [
       {
