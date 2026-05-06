@@ -1,4 +1,5 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { createIsomorphicFn } from "@tanstack/react-start";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
@@ -6,24 +7,24 @@ import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Detecta si el request HTTP del SSR contiene una cookie de sesión Supabase.
- * Las cookies que Supabase coloca tienen forma sb-{project-ref}-auth-token o
- * sb-{project-ref}-auth-token.0/.1 (chunks). Cualquiera de ellas indica sesión.
+ * Usa createIsomorphicFn de TanStack Start para que el código server-only
+ * NO se incluya en el bundle cliente (evita el error import-protection).
  */
-async function ssrHasSupabaseAuthCookie(): Promise<boolean> {
-  try {
-    // Import dinámico — solo se evalúa en SSR. En cliente nunca se ejecuta.
-    const mod: { getRequest?: () => Request | undefined } = await import(
-      "@tanstack/react-start/server"
-    );
-    const request = mod.getRequest?.();
-    const cookieHeader = request?.headers.get("cookie") ?? "";
-    return /sb-[a-z0-9-]+-auth-token(\.\d+)?=/.test(cookieHeader);
-  } catch {
-    // Si no podemos leer el request, no bloqueamos en SSR — pero el guard
-    // del cliente (más abajo) actuará después.
-    return false;
-  }
-}
+const ssrHasSupabaseAuthCookie = createIsomorphicFn()
+  .client(() => false)
+  .server(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getRequest } = require("@tanstack/react-start/server") as {
+        getRequest?: () => Request | undefined;
+      };
+      const request = getRequest?.();
+      const cookieHeader = request?.headers.get("cookie") ?? "";
+      return /sb-[a-z0-9-]+-auth-token(\.\d+)?=/.test(cookieHeader);
+    } catch {
+      return false;
+    }
+  });
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ location }) => {
