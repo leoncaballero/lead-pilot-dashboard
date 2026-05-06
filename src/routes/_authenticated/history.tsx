@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { getHistoryCases, type HistoryCase } from "@/api/history.functions";
 import { ConversationThread } from "@/components/ConversationThread";
@@ -255,20 +255,30 @@ function HistoryPage() {
         </table>
       </div>
 
-      <Dialog open={!!selectedCase} onOpenChange={(o) => !o && setSelectedCase(null)}>
-        <DialogContent className="max-w-3xl">
+      <Sheet open={!!selectedCase} onOpenChange={(o) => !o && setSelectedCase(null)}>
+        <SheetContent
+          side="right"
+          className="w-full sm:max-w-2xl overflow-y-auto p-0"
+        >
           {selectedCase && (
             <>
-              <DialogHeader>
-                <DialogTitle>
+              <SheetHeader className="border-b p-6">
+                <SheetTitle className="truncate text-base">
                   {selectedCase.lead_name ?? selectedCase.lead_email ?? selectedCase.id}
-                </DialogTitle>
-              </DialogHeader>
-              <CaseDetailDialogBody c={selectedCase} />
+                </SheetTitle>
+                {selectedCase.lead_email && selectedCase.lead_name && (
+                  <p className="truncate text-xs text-muted-foreground text-left">
+                    {selectedCase.lead_email}
+                  </p>
+                )}
+              </SheetHeader>
+              <div className="p-6">
+                <CaseDetailDialogBody c={selectedCase} />
+              </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
