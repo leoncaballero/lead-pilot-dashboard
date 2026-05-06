@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { getHistoryCases, type HistoryCase } from "@/api/history.functions";
+import { ConversationThread } from "@/components/ConversationThread";
 
 const STATUS_OPTIONS = [
   "pending_review",
@@ -324,14 +325,10 @@ function CaseDetailDialogBody({ c }: { c: HistoryCase }) {
         <Field label="Outcome" value={c.outcome} />
       </div>
 
-      {c.reply_original && (
-        <div>
-          <div className="text-xs font-medium uppercase text-muted-foreground mb-1">Reply original</div>
-          <blockquote className="border-l-2 border-muted-foreground/30 pl-3 italic text-foreground whitespace-pre-wrap">
-            {c.reply_original}
-          </blockquote>
-        </div>
-      )}
+      <div>
+        <div className="text-xs font-medium uppercase text-muted-foreground mb-2">Conversación completa (Smartlead)</div>
+        <ConversationThread smartleadLeadId={c.smartlead_lead_id ?? null} />
+      </div>
 
       {(c.turn_1_final || c.turn_1_generated) && (
         <div>
