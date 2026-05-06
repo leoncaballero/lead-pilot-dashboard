@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { getHistoryCases, type HistoryCase } from "@/server/history.functions";
+import { getHistoryCases, type HistoryCase } from "@/api/history.functions";
 
 const STATUS_OPTIONS = [
   "pending_review",

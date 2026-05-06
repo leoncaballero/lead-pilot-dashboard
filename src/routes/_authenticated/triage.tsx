@@ -34,7 +34,7 @@ import {
   getTriageCases,
   rejectCase,
   type TriageCase,
-} from "@/server/triage.functions";
+} from "@/api/triage.functions";
 
 export const Route = createFileRoute("/_authenticated/triage")({
   loader: async () => {
