@@ -19,8 +19,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { approveCase, editCase, rejectCase, type TriageCase } from "@/server/triage.functions";
-import { getDeepReviewCases, returnToTriage } from "@/server/deep-review.functions";
+import { approveCase, editCase, rejectCase } from "@/server/triage.functions";
+import { getDeepReviewCases, returnToTriage, type DeepReviewCase } from "@/server/deep-review.functions";
 
 const EDIT_REASONS = [
   "Halago disfrazado",
@@ -93,14 +93,14 @@ function DeepReviewPage() {
       setSelectedId(null);
       return;
     }
-    if (!cases.find((c: TriageCase) => c.id === selectedId)) {
+    if (!cases.find((c: DeepReviewCase) => c.id === selectedId)) {
       setSelectedId(cases[0].id);
     }
   }, [cases, selectedId]);
 
   // Cuando cambia el caso seleccionado, prellenar el editor con el copy generado
   useEffect(() => {
-    const c = cases.find((c: TriageCase) => c.id === selectedId);
+    const c = cases.find((c: DeepReviewCase) => c.id === selectedId);
     if (c) {
       setEditText(c.turn_1_generated ?? "");
       setEditReasons([]);
@@ -118,15 +118,15 @@ function DeepReviewPage() {
   }, [router]);
 
   const selectedIndex = useMemo(
-    () => cases.findIndex((c: TriageCase) => c.id === selectedId),
+    () => cases.findIndex((c: DeepReviewCase) => c.id === selectedId),
     [cases, selectedId]
   );
   const selected = selectedIndex >= 0 ? cases[selectedIndex] : null;
 
   function advanceAfter(currentId: string) {
-    const idx = cases.findIndex((c: TriageCase) => c.id === currentId);
+    const idx = cases.findIndex((c: DeepReviewCase) => c.id === currentId);
     const next =
-      cases[idx + 1] ?? cases.find((c: TriageCase) => c.id !== currentId) ?? null;
+      cases[idx + 1] ?? cases.find((c: DeepReviewCase) => c.id !== currentId) ?? null;
     setSelectedId(next?.id ?? null);
   }
 
@@ -198,7 +198,7 @@ function DeepReviewPage() {
           {cases.length === 0 ? (
             <EmptyState />
           ) : (
-            cases.map((c: TriageCase) => (
+            cases.map((c: DeepReviewCase) => (
               <CaseListItem
                 key={c.id}
                 c={c}
@@ -433,7 +433,7 @@ function CaseListItem({
   active,
   onClick,
 }: {
-  c: TriageCase;
+  c: DeepReviewCase;
   active: boolean;
   onClick: () => void;
 }) {

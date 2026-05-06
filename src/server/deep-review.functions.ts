@@ -3,8 +3,28 @@ import { createServerFn } from "@tanstack/react-start";
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
-import type { TriageCase } from "./triage.functions";
-export type DeepReviewCase = TriageCase;
+// Tipo local del row del pipeline tal y como lo retornamos en getDeepReviewCases.
+// Se evita re-exportar desde triage.functions porque el import-protection plugin
+// de Vite bloquea imports cross-/server/ desde el bundle cliente.
+export type DeepReviewCase = {
+  id: string;
+  smartlead_lead_id?: string | null;
+  smartlead_thread_id?: string | null;
+  lead_name?: string | null;
+  lead_email?: string | null;
+  reply_original?: string | null;
+  reply_timestamp?: string | null;
+  segmento?: string | null;
+  patron?: string | null;
+  turn_1_generated?: string | null;
+  classification_output?: Record<string, JsonValue> | null;
+  validation_output?: Record<string, JsonValue> | null;
+  score?: number | null;
+  validado?: boolean | null;
+  errores_criticos?: string[] | null;
+  razones_fallo?: string[] | null;
+  status?: string | null;
+};
 
 const TABLE = "cl001_p007_turn1_pipeline";
 const ACTIVITY_TABLE = "cl001_p007_activity_events";
@@ -68,7 +88,7 @@ async function updateCase(caseId: string, patch: Record<string, JsonValue>) {
 }
 
 export const getDeepReviewCases = createServerFn({ method: "GET" }).handler(
-  async (): Promise<{ cases: TriageCase[] }> => {
+  async (): Promise<{ cases: DeepReviewCase[] }> => {
     // Casos en revisión profunda:
     //   - status='needs_deep_review' (score <85, ruteo automático del WF02 v2)
     //   - sdr_action='sent_to_deep_review' (mandados manualmente desde Triage)
@@ -81,7 +101,7 @@ export const getDeepReviewCases = createServerFn({ method: "GET" }).handler(
     });
     const data = (await pgrest(`${TABLE}?${params.toString()}`, {
       method: "GET",
-    })) as TriageCase[];
+    })) as DeepReviewCase[];
     return { cases: data ?? [] };
   }
 );
