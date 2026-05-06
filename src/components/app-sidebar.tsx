@@ -8,6 +8,7 @@ import {
   Activity,
   Settings,
   Plane,
+  FileText,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ const insightsItems = [
 ];
 
 const systemItems = [
+  { title: "Prompts", url: "/prompts", icon: FileText },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
