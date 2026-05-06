@@ -9,7 +9,7 @@ import {
   type AnalyticsSummary,
   type TopEditReason,
   type DailyVolumePoint,
-} from "@/server/analytics.functions";
+} from "@/api/analytics.functions";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
   loader: async () => {

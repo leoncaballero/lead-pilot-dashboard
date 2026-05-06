@@ -19,8 +19,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { approveCase, editCase, rejectCase } from "@/server/triage.functions";
-import { getDeepReviewCases, returnToTriage, type DeepReviewCase } from "@/server/deep-review.functions";
+import { approveCase, editCase, rejectCase } from "@/api/triage.functions";
+import { getDeepReviewCases, returnToTriage, type DeepReviewCase } from "@/api/deep-review.functions";
 
 const EDIT_REASONS = [
   "Halago disfrazado",
