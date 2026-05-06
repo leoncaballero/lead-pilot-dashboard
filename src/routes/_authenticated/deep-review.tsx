@@ -263,7 +263,7 @@ function DeepReviewPage() {
                           Razones de fallo
                         </div>
                         <ul className="list-disc pl-5 text-sm text-muted-foreground">
-                          {selected.razones_fallo.map((r, i) => <li key={i}>{r}</li>)}
+                          {selected.razones_fallo.map((r: string, i: number) => <li key={i}>{r}</li>)}
                         </ul>
                       </div>
                     )}
