@@ -42,8 +42,8 @@ export type TriageCase = {
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
-const ACTIVITY_TABLE = "activity_events";
-const EDIT_REASONS_TABLE = "edit_reasons";
+const ACTIVITY_TABLE = "cl001_p007_activity_events";
+const EDIT_REASONS_TABLE = "cl001_p007_edit_reasons";
 
 function getCreds() {
   const url = process.env.OUTBOUND_SUPABASE_URL;
@@ -79,6 +79,38 @@ async function pgrest(
   return text ? JSON.parse(text) : null;
 }
 
+/**
+ * Disparar el envío vía Smartlead llamando al webhook n8n del WF02 v2.
+ * Endpoint: POST /webhook/turn1-send-from-lovable con { pipeline_id }.
+ * Mientras el WF02 v2 esté en modo dry_run, marcará status='dry_run_only'
+ * y NO enviará nada por Smartlead. Cuando se desactive dry_run, enviará real.
+ *
+ * Configurable via env var OUTBOUND_TURN1_SEND_WEBHOOK_URL.
+ * Si no está configurada, usa el endpoint productivo conocido.
+ */
+async function triggerSendWebhook(pipelineId: string): Promise<void> {
+  const webhookUrl =
+    process.env.OUTBOUND_TURN1_SEND_WEBHOOK_URL ??
+    "https://cion8napp.nexau.es/webhook/turn1-send-from-lovable";
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pipeline_id: pipelineId }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(
+        `triggerSendWebhook failed [${res.status}] for pipeline ${pipelineId}: ${body}`
+      );
+      // No lanzamos error aquí: el row ya quedó en ready_to_send y el WF03 housekeeping
+      // (cuando exista) podrá retomarlo, o el operador desde el dashboard.
+    }
+  } catch (err) {
+    console.error(`triggerSendWebhook network error for pipeline ${pipelineId}:`, err);
+  }
+}
+
 export const getTriageCases = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ cases: TriageCase[] }> => {
     const params = new URLSearchParams({
@@ -106,7 +138,7 @@ export const getRealtimeConfig = createServerFn({ method: "GET" }).handler(
 );
 
 async function logEvent(
-  caseId: string,
+  pipelineId: string,
   eventType: string,
   payload: Record<string, JsonValue> = {}
 ) {
@@ -114,7 +146,7 @@ async function logEvent(
     await pgrest(ACTIVITY_TABLE, {
       method: "POST",
       body: JSON.stringify({
-        case_id: caseId,
+        pipeline_id: pipelineId,
         event_type: eventType,
         payload,
       }),
@@ -143,6 +175,8 @@ export const approveCase = createServerFn({ method: "POST" })
       status: "ready_to_send",
     });
     await logEvent(data.id, "turn_1_approved");
+    // Disparar el envío vía n8n WF02 v2 (Trigger B humano-en-loop)
+    await triggerSendWebhook(data.id);
     return { ok: true };
   });
 
@@ -156,6 +190,7 @@ export const rejectCase = createServerFn({ method: "POST" })
       status: "rejected",
     });
     await logEvent(data.id, "turn_1_rejected");
+    // No se invoca el webhook: el caso queda como rejected sin envío.
     return { ok: true };
   });
 
@@ -168,6 +203,7 @@ export const deepReviewCase = createServerFn({ method: "POST" })
       sdr_action_timestamp: new Date().toISOString(),
     });
     await logEvent(data.id, "turn_1_sent_to_deep_review");
+    // No se invoca el webhook: el caso queda en revisión profunda hasta acción posterior.
     return { ok: true };
   });
 
@@ -202,7 +238,7 @@ export const editCase = createServerFn({ method: "POST" })
           method: "POST",
           prefer: "return=minimal",
           body: JSON.stringify(
-            allReasons.map((reason) => ({ case_id: data.id, reason }))
+            allReasons.map((reason) => ({ pipeline_id: data.id, reason }))
           ),
         });
       } catch (err) {
@@ -211,5 +247,7 @@ export const editCase = createServerFn({ method: "POST" })
     }
 
     await logEvent(data.id, "turn_1_edited", { reasons: allReasons });
+    // Disparar el envío vía n8n WF02 v2 (Trigger B humano-en-loop)
+    await triggerSendWebhook(data.id);
     return { ok: true };
   });
