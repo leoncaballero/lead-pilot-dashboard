@@ -35,6 +35,7 @@ import {
   rejectCase,
   type TriageCase,
 } from "@/api/triage.functions";
+import { ConversationThread } from "@/components/ConversationThread";
 
 export const Route = createFileRoute("/_authenticated/triage")({
   loader: async () => {
@@ -902,16 +903,10 @@ function CaseDetail({
       </div>
 
       <div className="space-y-6 p-6">
-        <Section title="Reply original">
-          {c.reply_original ? (
-            <blockquote className="border-l-4 border-muted-foreground/30 pl-4 text-sm italic text-foreground whitespace-pre-wrap">
-              {c.reply_original}
-            </blockquote>
-          ) : (
-            <Empty />
-          )}
+        <Section title="Conversación completa (Smartlead)">
+          <ConversationThread smartleadLeadId={c.smartlead_lead_id ?? null} />
           <p className="mt-2 text-xs text-muted-foreground">
-            Respondió {formatRel(min)}
+            Último reply {formatRel(min)}
           </p>
         </Section>
 
