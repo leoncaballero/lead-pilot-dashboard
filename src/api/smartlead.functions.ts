@@ -84,10 +84,12 @@ export const getSmartleadThread = createServerFn({ method: "GET" })
       const history = await smartleadGet<HistoryResp>(
         `/campaigns/${campaignId}/leads/${encodeURIComponent(leadId)}/message-history`
       );
+      // Orden DESC por time: lo MAS RECIENTE primero (UX: ver el ultimo
+      // mensaje sin tener que scrollear hasta abajo).
       const messages = (history.history ?? []).slice().sort((a, b) => {
         const ta = a.time ? Date.parse(a.time) : 0;
         const tb = b.time ? Date.parse(b.time) : 0;
-        return ta - tb;
+        return tb - ta;
       });
 
       return {
