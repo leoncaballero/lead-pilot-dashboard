@@ -130,6 +130,49 @@ function confidenceLevel(c: TriageCase): Confidence {
   };
 }
 
+// Etiquetas y colores por turn_type. Defensa progresiva: si la columna
+// turn_type aun no existe en la DB (antes del DDL setting-pilot-extend-turns.sql),
+// los rows tendran turn_type=undefined y se renderizan como turn1 (default).
+const TURN_TYPE_LABELS: Record<string, { label: string; classes: string }> = {
+  turn1: {
+    label: "Turn 1",
+    classes: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+  },
+  turn2_generic: {
+    label: "Turn 2",
+    classes: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  },
+  turn3_generic: {
+    label: "Turn 3",
+    classes: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  },
+  follow_up_4h: {
+    label: "FU 4h",
+    classes: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  },
+  follow_up_24h: {
+    label: "FU 24h",
+    classes: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  },
+  follow_up_3d: {
+    label: "FU 3d",
+    classes: "bg-orange-200 text-orange-900 dark:bg-orange-900/60 dark:text-orange-200",
+  },
+  objection_response: {
+    label: "Objecion",
+    classes: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  },
+  booking_propose: {
+    label: "Propuesta hora",
+    classes: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  },
+};
+
+function turnTypeMeta(c: TriageCase) {
+  const key = c.turn_type ?? "turn1";
+  return TURN_TYPE_LABELS[key] ?? { label: key, classes: "bg-muted text-muted-foreground" };
+}
+
 const CHECK_LABELS: Record<string, string> = {
   personalizacion_funcional: "Personalización funcional",
   sin_halago_disfrazado: "Sin halago disfrazado",
@@ -750,11 +793,16 @@ function CaseListItem({
                 {c.score}
               </span>
             )}
-            {c.patron && (
-              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                {c.patron}
-              </Badge>
-            )}
+            <div className="flex items-center gap-1">
+              <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium", turnTypeMeta(c).classes)}>
+                {turnTypeMeta(c).label}
+              </span>
+              {c.patron && (
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  {c.patron}
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
         <div className="mt-2 flex items-center justify-between gap-2">
@@ -828,6 +876,9 @@ function CaseDetail({
           <div className="flex items-center gap-2">
             <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", conf.pillClasses)}>
               {conf.label}
+            </span>
+            <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", turnTypeMeta(c).classes)}>
+              {turnTypeMeta(c).label}
             </span>
             {c.patron && <Badge variant="outline">Patrón {c.patron}</Badge>}
           </div>

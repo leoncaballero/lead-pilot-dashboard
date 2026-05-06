@@ -44,6 +44,11 @@ export type TriageCase = {
   razones_fallo?: string[] | null;
   status?: string | null;
   created_at?: string | null;
+  // Defensa progresiva: estos campos llegan tras ejecutar el ALTER TABLE
+  // de extender pipeline (setting-pilot-extend-turns.sql). Mientras no exista
+  // la columna en DB, vienen undefined → fallback a 'turn1' / 1 en la UI.
+  turn_number?: number | null;
+  turn_type?: string | null;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
@@ -121,9 +126,12 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
     // Modo "humano siempre revisa": mostrar TODOS los casos pending_review,
     // sin filtrar por score. La UI los agrupa visualmente por nivel de confianza.
     // Orden: más recientes primero (en lugar del antiguo asc por antigüedad).
+    // select=* para resiliencia ante columnas nuevas (turn_number, turn_type, ...)
+    // que se añadan a cl001_p007_turn1_pipeline. Si la lista hardcodeada incluye
+    // una columna inexistente, PostgREST falla. Con * el componente las recoge
+    // si están y falla a undefined si no.
     const params = new URLSearchParams({
-      select:
-        "id,smartlead_lead_id,smartlead_thread_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,classification_output,validation_output,score,validado,errores_criticos,razones_fallo,status,created_at",
+      select: "*",
       status: "eq.pending_review",
       order: "created_at.desc.nullslast",
     });
