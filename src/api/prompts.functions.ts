@@ -182,6 +182,233 @@ export const activatePromptVersion = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Sugerir mejoras al prompt activo basado en feedback humano reciente.
+ *
+ * Lee:
+ * - El prompt actual de la combinación dada
+ * - Los últimos N (default 30) edits con sus razones + diff (original vs editado)
+ * - Los últimos N rejects con sus razones (prefijo "reject:")
+ *
+ * Llama a Claude Opus para que proponga una v2 del prompt con cambios mínimos
+ * coherentes con los patrones de corrección humana detectados. NO sustituye al
+ * humano: devuelve la sugerencia y un análisis, el humano decide si la guarda
+ * como nueva versión.
+ *
+ * Necesita ANTHROPIC_API_KEY como secret en Lovable Cloud.
+ */
+export type SuggestPromptResponse = {
+  ok: boolean;
+  current_prompt?: string;
+  suggested_prompt?: string;
+  summary?: string;
+  patterns_detected?: string[];
+  num_edits_analyzed?: number;
+  num_rejects_analyzed?: number;
+  cost_tokens?: { input: number; output: number };
+  error?: string;
+};
+
+const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
+const EDIT_REASONS_TABLE = "cl001_p007_edit_reasons";
+
+export const suggestPromptImprovements = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      prompt_type: PromptType;
+      segmento: Segmento;
+      turn_type: TurnType;
+      lookback_days?: number;
+    }) => data
+  )
+  .handler(async ({ data }): Promise<SuggestPromptResponse> => {
+    const anthKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthKey) {
+      return {
+        ok: false,
+        error:
+          "ANTHROPIC_API_KEY no configurado en Lovable Cloud. Añade el secret para usar 'Sugerir mejoras'.",
+      };
+    }
+
+    const lookbackDays = data.lookback_days ?? 30;
+    const since = new Date(
+      Date.now() - lookbackDays * 24 * 3600 * 1000
+    ).toISOString();
+
+    // 1. Prompt activo actual
+    const activePromptRows = (await pgrest(
+      `${TABLE}?prompt_type=eq.${data.prompt_type}&segmento=eq.${data.segmento}&turn_type=eq.${data.turn_type}&is_active=eq.true&select=id,version,prompt_system&limit=1`,
+      { method: "GET" }
+    )) as Array<{ id: string; version: string; prompt_system: string }>;
+    if (!activePromptRows || activePromptRows.length === 0) {
+      return {
+        ok: false,
+        error: `No hay prompt activo para ${data.prompt_type}/${data.segmento}/${data.turn_type}`,
+      };
+    }
+    const activePrompt = activePromptRows[0];
+
+    // 2. Last N edits con turn_1 generado, turn_1 final, edit_reason, diff
+    // Filtramos por segmento + sdr_action='edited_and_sent' + lookback
+    type PipelineEditRow = {
+      id: string;
+      segmento: string | null;
+      turn_type: string | null;
+      turn_1_generated: string | null;
+      turn_1_final: string | null;
+      edit_reason: string | null;
+      sdr_action_timestamp: string | null;
+    };
+    const editParams = new URLSearchParams({
+      select:
+        "id,segmento,turn_type,turn_1_generated,turn_1_final,edit_reason,sdr_action_timestamp",
+      sdr_action: "eq.edited_and_sent",
+      segmento: `eq.${data.segmento}`,
+      order: "sdr_action_timestamp.desc.nullslast",
+      limit: "30",
+    });
+    editParams.append("sdr_action_timestamp", `gte.${since}`);
+    // Solo del mismo turn_type (los rejects de turn1 no informan al prompt de turn2)
+    editParams.append("turn_type", `eq.${data.turn_type}`);
+    const editRows = (await pgrest(
+      `${PIPELINE_TABLE}?${editParams.toString()}`,
+      { method: "GET" }
+    )) as PipelineEditRow[];
+
+    // 3. Last N rejects (con razones)
+    type RejectReasonRow = { pipeline_id: string; reason: string; created_at: string | null };
+    const rejectReasonsRows = (await pgrest(
+      `${EDIT_REASONS_TABLE}?select=pipeline_id,reason,created_at&reason=like.reject:%25&order=created_at.desc.nullslast&limit=30&created_at=gte.${since}`,
+      { method: "GET" }
+    )) as RejectReasonRow[];
+
+    // Filtrar reject reasons a sólo casos del mismo turn_type+segmento
+    const rejectIds = (rejectReasonsRows ?? []).map((r) => r.pipeline_id);
+    let rejectsBySegmentTurn: Set<string> = new Set();
+    if (rejectIds.length > 0) {
+      const inList = `(${rejectIds.map((i) => `"${i}"`).join(",")})`;
+      const rejectPipelineRows = (await pgrest(
+        `${PIPELINE_TABLE}?select=id&segmento=eq.${data.segmento}&turn_type=eq.${data.turn_type}&id=in.${inList}`,
+        { method: "GET" }
+      )) as Array<{ id: string }>;
+      rejectsBySegmentTurn = new Set(rejectPipelineRows.map((r) => r.id));
+    }
+    const filteredRejects = (rejectReasonsRows ?? []).filter((r) =>
+      rejectsBySegmentTurn.has(r.pipeline_id)
+    );
+
+    // 4. Construir el contexto para Claude
+    const editsSummary = (editRows ?? [])
+      .filter((e) => e.turn_1_generated && e.turn_1_final)
+      .slice(0, 15)
+      .map((e, i) => {
+        const orig = (e.turn_1_generated ?? "").slice(0, 600);
+        const final = (e.turn_1_final ?? "").slice(0, 600);
+        return `--- Edit #${i + 1} (razones: ${e.edit_reason ?? "—"}) ---\nORIGINAL IA:\n${orig}\n\nVERSIÓN HUMANA:\n${final}`;
+      })
+      .join("\n\n");
+
+    const rejectsSummary = filteredRejects
+      .slice(0, 20)
+      .map((r) => `- ${r.reason.replace(/^reject:\s*/, "")}`)
+      .join("\n");
+
+    const userPrompt = `Eres un experto en prompt engineering iterativo basado en feedback humano. Te paso:
+
+1. El PROMPT actual del sistema (versión ${activePrompt.version})
+2. ${editRows.length} ediciones humanas recientes del output del prompt (con la versión IA original y la versión humana corregida + razones citadas por el editor)
+3. ${filteredRejects.length} rechazos humanos con sus razones
+
+Tu trabajo: detectar PATRONES en las correcciones y proponer una versión mejorada del prompt (v2) que aborde esos patrones con cambios MÍNIMOS y QUIRÚRGICOS. NO reescribas todo. NO añadas reglas hipotéticas no fundamentadas en el feedback.
+
+# PROMPT ACTUAL (v${activePrompt.version})
+
+${activePrompt.prompt_system}
+
+# EDICIONES HUMANAS RECIENTES (${editRows.length})
+
+${editsSummary || "(ninguna en el periodo)"}
+
+# RECHAZOS HUMANOS RECIENTES (${filteredRejects.length})
+
+${rejectsSummary || "(ninguno en el periodo)"}
+
+# FORMATO DE RESPUESTA
+
+Devuelve EXCLUSIVAMENTE un JSON con esta estructura, sin markdown ni texto extra:
+
+{
+  "patterns_detected": ["patrón 1 corto y concreto", "patrón 2", ...],
+  "summary": "Resumen 2-3 frases de qué cambio propones y por qué",
+  "suggested_prompt": "<el prompt nuevo COMPLETO, listo para reemplazar al actual>"
+}
+
+Si no detectas patrones suficientemente fuertes (ej. <3 ediciones, ningún patrón claro repetido en al menos 2 casos), devuelve patterns_detected: [] y suggested_prompt igual al actual con summary explicando por qué no propones cambios.`;
+
+    // 5. Llamar a Claude Opus
+    let resp;
+    try {
+      resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-opus-4-7",
+          max_tokens: 8192,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Error llamando Anthropic: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (!resp.ok) {
+      const body = await resp.text();
+      return { ok: false, error: `Anthropic ${resp.status}: ${body.slice(0, 300)}` };
+    }
+    const respJson = (await resp.json()) as {
+      content?: Array<{ text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = respJson.content?.[0]?.text ?? "";
+
+    // Parse del JSON respuesta
+    let parsed: {
+      patterns_detected: string[];
+      summary: string;
+      suggested_prompt: string;
+    };
+    try {
+      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      return {
+        ok: false,
+        error: `No pude parsear la respuesta de Claude. Texto: ${text.slice(0, 300)}`,
+      };
+    }
+
+    return {
+      ok: true,
+      current_prompt: activePrompt.prompt_system,
+      suggested_prompt: parsed.suggested_prompt,
+      summary: parsed.summary,
+      patterns_detected: parsed.patterns_detected ?? [],
+      num_edits_analyzed: editRows.length,
+      num_rejects_analyzed: filteredRejects.length,
+      cost_tokens: {
+        input: respJson.usage?.input_tokens ?? 0,
+        output: respJson.usage?.output_tokens ?? 0,
+      },
+    };
+  });
+
 function computeNextVersion(existing: string[]): string {
   if (existing.length === 0) return "v1.0";
   const nums = existing
