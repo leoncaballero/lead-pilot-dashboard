@@ -23,6 +23,7 @@ import {
   refinePromptWithFeedback,
   evalPrompt,
   getEvalSamples,
+  getPromptStats,
   PROMPT_TYPE_VALUES,
   SEGMENTO_VALUES,
   TURN_TYPE_VALUES,
@@ -36,6 +37,7 @@ import {
   type ConversationTurn,
   type EvalTestCase,
   type EvalResult,
+  type PromptVersionStats,
 } from "@/api/prompts.functions";
 
 const TURN_TYPE_LABELS: Record<TurnType, string> = {
@@ -282,6 +284,50 @@ function PromptMatrix({
   );
 }
 
+function PromptStatsRow({
+  stats,
+  loading,
+}: {
+  stats: PromptVersionStats | null | undefined;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="text-[11px] text-muted-foreground italic">
+        Cargando outcomes…
+      </div>
+    );
+  }
+  if (!stats || stats.generated_count === 0) {
+    return (
+      <div
+        className="text-[11px] text-muted-foreground italic"
+        title="Atribución: pipeline rows creados desde que esta versión es la activa. Si todavía no se han enviado generaciones, queda en blanco."
+      >
+        Aún sin generaciones atribuidas a esta versión.
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex items-center gap-2 text-[11px]"
+      title="Atribución best-effort por ventana temporal entre creación de versiones."
+    >
+      <span className="rounded bg-muted px-2 py-0.5 tabular-nums font-medium">
+        {stats.generated_count} generaciones
+      </span>
+      <span className="rounded bg-blue-50 px-2 py-0.5 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 tabular-nums">
+        ↩ {(stats.reply_rate * 100).toFixed(0)}% reply
+        <span className="text-[9px] opacity-70 ml-0.5">({stats.replied_count})</span>
+      </span>
+      <span className="rounded bg-emerald-50 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 tabular-nums">
+        🗓 {(stats.booking_rate * 100).toFixed(0)}% booking
+        <span className="text-[9px] opacity-70 ml-0.5">({stats.booked_count})</span>
+      </span>
+    </div>
+  );
+}
+
 function PromptDetailPanel({
   group,
   busy,
@@ -309,6 +355,40 @@ function PromptDetailPanel({
   onSuggest: (p: PromptVersion) => void;
   onActivate: (p: PromptVersion) => void;
 }) {
+  const statsFn = useServerFn(getPromptStats);
+  const [statsByVersionId, setStatsByVersionId] = useState<
+    Map<string, PromptVersionStats> | null
+  >(null);
+  const [statsErr, setStatsErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatsByVersionId(null);
+    setStatsErr(null);
+    statsFn({
+      data: {
+        prompt_type: group.prompt_type,
+        segmento: group.segmento,
+        turn_type: group.turn_type,
+      },
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const m = new Map<string, PromptVersionStats>();
+        for (const s of res.stats) m.set(s.version_id, s);
+        setStatsByVersionId(m);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setStatsErr(e instanceof Error ? e.message : "Error stats");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [group.prompt_type, group.segmento, group.turn_type, statsFn]);
+
+  const activeStats = group.active ? statsByVersionId?.get(group.active.id) : null;
+
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-2.5">
@@ -391,6 +471,7 @@ function PromptDetailPanel({
               {group.active.prompt_system.length} chars · actualizada{" "}
               {formatTime(group.active.updated_at)}
             </div>
+            <PromptStatsRow stats={activeStats} loading={statsByVersionId === null && !statsErr} />
             <div className="flex items-center justify-between gap-2 pt-1">
               <pre className="flex-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] font-mono leading-relaxed text-muted-foreground">
                 {group.active.prompt_system.slice(0, 500)}
@@ -415,34 +496,54 @@ function PromptDetailPanel({
             {group.history.length} versión{group.history.length === 1 ? "" : "es"} anterior
             {group.history.length === 1 ? "" : "es"}
           </summary>
-          <ul className="mt-2 space-y-1">
-            {group.history.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center justify-between gap-2 text-sm border-l-2 border-muted pl-2"
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-xs">{p.version}</span>
-                  <span className="text-xs text-muted-foreground">{p.description ?? "—"}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    ({p.prompt_system.length} chars · {formatTime(p.updated_at)})
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => onView(p)}>
-                    Ver
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onActivate(p)}
-                    disabled={busy}
-                  >
-                    Activar
-                  </Button>
-                </div>
-              </li>
-            ))}
+          <ul className="mt-2 space-y-1.5">
+            {group.history.map((p) => {
+              const s = statsByVersionId?.get(p.id);
+              return (
+                <li
+                  key={p.id}
+                  className="flex items-center justify-between gap-2 text-sm border-l-2 border-muted pl-2"
+                >
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="font-mono text-xs">{p.version}</span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {p.description ?? "—"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      ({p.prompt_system.length} chars · {formatTime(p.updated_at)})
+                    </span>
+                    {s && s.generated_count > 0 && (
+                      <span className="flex items-center gap-1 text-[10px]">
+                        <span className="rounded bg-muted px-1.5 py-0.5 tabular-nums">
+                          {s.generated_count} gen
+                        </span>
+                        <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 tabular-nums">
+                          ↩ {(s.reply_rate * 100).toFixed(0)}%
+                        </span>
+                        {s.booked_count > 0 && (
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 tabular-nums">
+                            🗓 {(s.booking_rate * 100).toFixed(0)}%
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" onClick={() => onView(p)}>
+                      Ver
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onActivate(p)}
+                      disabled={busy}
+                    >
+                      Activar
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </details>
       )}
