@@ -9,6 +9,7 @@ import {
   Settings,
   Plane,
   FileText,
+  Columns3,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,6 +26,7 @@ import {
 const mainItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Triage", url: "/triage", icon: Inbox },
+  { title: "Pipeline", url: "/pipeline", icon: Columns3 },
   { title: "Deep Review", url: "/deep-review", icon: FileSearch },
   { title: "History", url: "/history", icon: History },
 ];
