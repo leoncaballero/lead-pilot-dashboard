@@ -209,7 +209,7 @@ function DecisionStats({ summary }: { summary: AnalyticsSummary }) {
       </div>
       <p className="text-[11px] text-muted-foreground italic">
         Cuanto más alto el "aprobado sin editar", más confianza en el prompt actual.
-        Cuando suba >70% sostenido, se puede plantear auto-aprobar los AI-auto sin SDR.
+        Cuando suba {">"}70% sostenido, se puede plantear auto-aprobar los AI-auto sin SDR.
       </p>
     </div>
   );
