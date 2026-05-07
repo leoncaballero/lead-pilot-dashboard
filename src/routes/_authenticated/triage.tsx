@@ -175,6 +175,29 @@ function turnTypeMeta(c: TriageCase) {
   return TURN_TYPE_LABELS[key] ?? { label: key, classes: "bg-muted text-muted-foreground" };
 }
 
+/**
+ * "IA habría aprobado y enviado solo": score >= 95 AND no errores críticos.
+ * Ese es el umbral del routing original (antes de "humano siempre revisa").
+ * Saberlo nos ayuda a preparar el momento en que apaguemos dry_run y dejemos
+ * pasar los high-confidence sin revisión humana.
+ */
+function aiWouldAutoApprove(c: TriageCase): boolean {
+  const score = typeof c.score === "number" ? c.score : 0;
+  const criticos = c.errores_criticos?.length ?? 0;
+  return score >= 95 && criticos === 0;
+}
+
+/**
+ * Detecta el bug en el que el Validador devuelve score alto pero el Generador
+ * no produjo turn_1_generated (output vacio o falló parsing). Probable causa:
+ * Generador devolvió JSON malformado y safeParseJson cayó al fallback {}.
+ */
+function hasMissingTurn1Bug(c: TriageCase): boolean {
+  const score = typeof c.score === "number" ? c.score : 0;
+  const hasContent = !!(c.turn_1_generated && c.turn_1_generated.trim().length > 0);
+  return !hasContent && score >= 50;
+}
+
 const CHECK_LABELS: Record<string, string> = {
   personalizacion_funcional: "Personalización funcional",
   sin_halago_disfrazado: "Sin halago disfrazado",
@@ -541,6 +564,37 @@ function TriagePage() {
         </div>
       )}
 
+      {selectedIds.size === 0 && (() => {
+        const aiAutoCases = (cases as TriageCase[]).filter(
+          (c) => aiWouldAutoApprove(c) && !hasMissingTurn1Bug(c)
+        );
+        if (aiAutoCases.length === 0) return null;
+        return (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-2 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+            <div className="text-sm">
+              <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                {aiAutoCases.length} caso{aiAutoCases.length === 1 ? "" : "s"}
+              </span>{" "}
+              <span className="text-muted-foreground">
+                {aiAutoCases.length === 1
+                  ? "que la IA habría aprobado y enviado sin revisión"
+                  : "que la IA habría aprobado y enviado sin revisión"}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/40 dark:text-emerald-300"
+              onClick={() => {
+                setSelectedIds(new Set(aiAutoCases.map((c) => c.id)));
+              }}
+            >
+              Seleccionar los {aiAutoCases.length} para revisión rápida
+            </Button>
+          </div>
+        );
+      })()}
+
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar lista */}
         <aside className="w-[30%] min-w-[260px] flex flex-col gap-2 overflow-hidden pr-1">
@@ -801,6 +855,8 @@ function CaseListItem({
 }) {
   const min = minutesSince(c.reply_timestamp);
   const conf = confidenceLevel(c);
+  const aiAuto = aiWouldAutoApprove(c);
+  const missingTurn1 = hasMissingTurn1Bug(c);
   return (
     <div
       className={cn(
@@ -823,8 +879,26 @@ function CaseListItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium">
-              {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
+            <div className="flex items-center gap-1.5">
+              {aiAuto && !missingTurn1 && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-emerald-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                  title="IA habría aprobado y enviado sin revisión humana (score≥95, sin críticos)"
+                >
+                  AI
+                </span>
+              )}
+              {missingTurn1 && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-amber-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                  title="Score alto pero sin Turn 1 generado — bug del Generador/Validador"
+                >
+                  ⚠
+                </span>
+              )}
+              <div className="truncate text-sm font-medium">
+                {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
+              </div>
             </div>
             {c.lead_email && (
               <div className="truncate text-xs text-muted-foreground">
@@ -1068,6 +1142,8 @@ function CaseDetail({
   const hasRazonesFallo = (c.razones_fallo?.length ?? 0) > 0;
   const hasChecksDetail = checks && Object.keys(checks).length > 0;
   const hasValidationDetail = hasRazonesFallo || hasChecksDetail || comentariosValidador;
+  const aiAuto = aiWouldAutoApprove(c);
+  const missingTurn1 = hasMissingTurn1Bug(c);
 
   return (
     <div className="flex flex-col h-full">
@@ -1088,6 +1164,14 @@ function CaseDetail({
             <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
               Patrón {c.patron}
             </Badge>
+          )}
+          {aiAuto && !missingTurn1 && (
+            <span
+              className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+              title="IA habría aprobado y enviado sola (score≥95, sin errores críticos)"
+            >
+              IA auto
+            </span>
           )}
           <span className="ml-auto flex items-center gap-2">
             <span className={cn("font-medium", slaColor(min))}>
@@ -1116,7 +1200,10 @@ function CaseDetail({
           <h3 className="mb-3 text-xs font-medium uppercase text-muted-foreground">
             Conversación · último reply {formatRel(min)}
           </h3>
-          <ConversationThread smartleadLeadId={c.smartlead_lead_id ?? null} />
+          <ConversationThread
+            smartleadLeadId={c.smartlead_lead_id ?? null}
+            defaultCompact
+          />
         </div>
 
         {/* Columna derecha: Turn 1 destacado + score + acciones (scrollable) */}
@@ -1134,6 +1221,17 @@ function CaseDetail({
                 validado={c.validado}
               />
             </div>
+            {missingTurn1 && (
+              <div className="mb-2 rounded-md border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                  ⚠ Score alto pero sin Turn 1 generado
+                </p>
+                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  Bug del Generador o Validador (probable JSON malformado). Edita o
+                  rechaza este caso — NO lo apruebes tal cual.
+                </p>
+              </div>
+            )}
             {c.turn_1_generated ? (
               <div className="rounded-md border bg-card p-4 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
                 {c.turn_1_generated}

@@ -10,16 +10,23 @@ import { cn } from "@/lib/utils";
  * Cache: la response del serverFn no se cachea explicitamente por nosotros, pero
  * react-router/tanstack-start mantiene el estado del componente abierto, asi que
  * abrir-cerrar-abrir el caso re-fetcha (esperado para mantener freshness).
+ *
+ * Modo compacto (defaultCompact=true): muestra solo el ultimo REPLY del lead
+ * + el ultimo SENT nuestro. Para Triage donde el SDR necesita decidir rapido
+ * sin perderse en histórico antiguo. Toggle para expandir al hilo completo.
  */
 export function ConversationThread({
   smartleadLeadId,
+  defaultCompact = false,
 }: {
   smartleadLeadId: string | number | null | undefined;
+  defaultCompact?: boolean;
 }) {
   const fetchFn = useServerFn(getSmartleadThread);
   const [thread, setThread] = useState<SmartleadThread | null>(null);
   const [loading, setLoading] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
+  const [compact, setCompact] = useState(defaultCompact);
 
   useEffect(() => {
     if (!smartleadLeadId) {
@@ -86,23 +93,63 @@ export function ConversationThread({
     );
   }
 
+  // En modo compacto: ultimo REPLY + ultimo SENT (los mensajes ya vienen DESC).
+  // El primer item es siempre el mas reciente (cualquiera que sea su type),
+  // luego buscamos el primero del tipo opuesto.
+  const visibleMessages = (() => {
+    if (!compact) return thread.messages;
+    const head = thread.messages[0];
+    if (!head) return [];
+    const opposite = thread.messages.find((m) => m.type !== head.type);
+    return opposite ? [head, opposite] : [head];
+  })();
+  const hiddenCount = thread.messages.length - visibleMessages.length;
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs text-muted-foreground">
-          {thread.messages.length} mensaje{thread.messages.length === 1 ? "" : "s"}
+          {compact ? (
+            <>
+              Mostrando últimos {visibleMessages.length} de {thread.messages.length}
+            </>
+          ) : (
+            <>
+              {thread.messages.length} mensaje{thread.messages.length === 1 ? "" : "s"}
+            </>
+          )}
           {thread.campaign_name && ` · campaign ${thread.campaign_name}`}
         </p>
-        <button
-          type="button"
-          onClick={() => setShowRaw((v) => !v)}
-          className="text-[11px] underline text-muted-foreground hover:text-foreground"
-        >
-          {showRaw ? "Ver limpio" : "Ver con HTML"}
-        </button>
+        <div className="flex items-center gap-3">
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setCompact(false)}
+              className="text-[11px] underline text-muted-foreground hover:text-foreground"
+            >
+              Ver hilo completo (+{hiddenCount})
+            </button>
+          )}
+          {!compact && thread.messages.length > 2 && (
+            <button
+              type="button"
+              onClick={() => setCompact(true)}
+              className="text-[11px] underline text-muted-foreground hover:text-foreground"
+            >
+              Compactar
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowRaw((v) => !v)}
+            className="text-[11px] underline text-muted-foreground hover:text-foreground"
+          >
+            {showRaw ? "Ver limpio" : "Ver con HTML"}
+          </button>
+        </div>
       </div>
       <ol className="space-y-3">
-        {thread.messages.map((m, i) => (
+        {visibleMessages.map((m, i) => (
           <MessageBubble key={m.message_id ?? `${i}-${m.time}`} m={m} showRaw={showRaw} />
         ))}
       </ol>
