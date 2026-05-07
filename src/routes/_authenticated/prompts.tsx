@@ -1,5 +1,5 @@
 import { createFileRoute, ErrorComponent, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,6 +88,416 @@ function PromptsPending() {
   );
 }
 
+const PIPELINE_STAGES: Array<{
+  key: "reply" | "classifier" | "generator" | "validator" | "send";
+  label: string;
+  icon: string;
+  isPrompt: PromptType | null;
+  description: string;
+}> = [
+  {
+    key: "reply",
+    label: "Reply detectado",
+    icon: "📨",
+    isPrompt: null,
+    description: "Smartlead webhook → n8n WF[01]",
+  },
+  {
+    key: "classifier",
+    label: "Clasifica",
+    icon: "🔍",
+    isPrompt: "classifier",
+    description: "¿Lead válido? patrón A/B/C, tono, foco",
+  },
+  {
+    key: "generator",
+    label: "Genera",
+    icon: "✍️",
+    isPrompt: "generator",
+    description: "Drafta el siguiente turn",
+  },
+  {
+    key: "validator",
+    label: "Valida",
+    icon: "✅",
+    isPrompt: "validator",
+    description: "Revisa el draft y decide auto/SDR/reject",
+  },
+  {
+    key: "send",
+    label: "Envía",
+    icon: "📤",
+    isPrompt: null,
+    description: "Smartlead reply-to-email",
+  },
+];
+
+function PipelineFunnel({
+  counts,
+  totalGroups,
+}: {
+  counts: Record<PromptType, number>;
+  totalGroups: number;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+          Pipeline · cómo se usan los prompts
+        </h2>
+        <span className="text-[10px] text-muted-foreground">
+          {totalGroups} combinaciones (turn × tipo × segmento)
+        </span>
+      </div>
+      <div className="flex items-stretch gap-1.5">
+        {PIPELINE_STAGES.map((s, i) => {
+          const isPromptStage = s.isPrompt !== null;
+          const count = isPromptStage ? counts[s.isPrompt!] : null;
+          return (
+            <Fragment key={s.key}>
+              <div
+                className={cn(
+                  "flex-1 rounded-md border px-2.5 py-2 transition-colors",
+                  isPromptStage
+                    ? "bg-emerald-50/50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900"
+                    : "bg-muted/40 border-dashed"
+                )}
+                title={s.description}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base leading-none">{s.icon}</span>
+                  <span className="text-xs font-semibold truncate">{s.label}</span>
+                  {count !== null && (
+                    <span className="ml-auto rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] tabular-nums text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      {count}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">
+                  {s.description}
+                </p>
+              </div>
+              {i < PIPELINE_STAGES.length - 1 && (
+                <span className="self-center text-muted-foreground text-xs select-none">→</span>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PromptMatrix({
+  turnType,
+  segments,
+  getCell,
+  selected,
+  onSelect,
+  onCreate,
+}: {
+  turnType: TurnType;
+  segments: Segmento[];
+  getCell: (turn: TurnType, type: PromptType, seg: Segmento) => Group | null;
+  selected: { turn_type: TurnType; prompt_type: PromptType; segmento: Segmento } | null;
+  onSelect: (cell: { turn_type: TurnType; prompt_type: PromptType; segmento: Segmento }) => void;
+  onCreate: (seg: Segmento, type: PromptType) => void;
+}) {
+  const types: PromptType[] = ["classifier", "generator", "validator"];
+  return (
+    <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="grid grid-cols-[120px_repeat(3,1fr)] border-b bg-muted/30 text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+        <div className="px-3 py-2">Segmento ↓ / Tipo →</div>
+        {types.map((t) => (
+          <div key={t} className="px-3 py-2 border-l">
+            {PROMPT_TYPE_LABELS[t]}
+          </div>
+        ))}
+      </div>
+      {segments.map((seg) => (
+        <div
+          key={seg}
+          className="grid grid-cols-[120px_repeat(3,1fr)] border-b last:border-b-0"
+        >
+          <div className="px-3 py-3 flex items-center text-xs font-medium bg-muted/10">
+            {seg}
+          </div>
+          {types.map((t) => {
+            const cell = getCell(turnType, t, seg);
+            const isSelected =
+              selected?.turn_type === turnType &&
+              selected?.prompt_type === t &&
+              selected?.segmento === seg;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => {
+                  if (cell) onSelect({ turn_type: turnType, prompt_type: t, segmento: seg });
+                  else {
+                    onSelect({ turn_type: turnType, prompt_type: t, segmento: seg });
+                    onCreate(seg, t);
+                  }
+                }}
+                className={cn(
+                  "border-l px-3 py-3 text-left transition-colors min-h-[64px] flex flex-col gap-0.5",
+                  isSelected
+                    ? "bg-primary/10 ring-1 ring-primary/40"
+                    : cell?.active
+                    ? "hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20"
+                    : "hover:bg-accent/40"
+                )}
+              >
+                {cell?.active ? (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="font-mono text-xs">{cell.active.version}</span>
+                      {cell.history.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          (+{cell.history.length} prev)
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground truncate">
+                      {cell.active.model.replace("claude-", "")}
+                    </div>
+                    {cell.active.description && (
+                      <div className="text-[10px] text-muted-foreground line-clamp-1 italic">
+                        {cell.active.description}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-[11px] text-muted-foreground">
+                    <span className="rounded border border-dashed px-2 py-0.5">+ Crear</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PromptDetailPanel({
+  group,
+  busy,
+  evaluating,
+  refining,
+  suggesting,
+  onClose,
+  onView,
+  onEdit,
+  onEvaluate,
+  onRefine,
+  onSuggest,
+  onActivate,
+}: {
+  group: Group;
+  busy: boolean;
+  evaluating: PromptVersion | null;
+  refining: PromptVersion | null;
+  suggesting: PromptVersion | null;
+  onClose: () => void;
+  onView: (p: PromptVersion) => void;
+  onEdit: (p: PromptVersion) => void;
+  onEvaluate: (p: PromptVersion) => void;
+  onRefine: (p: PromptVersion) => void;
+  onSuggest: (p: PromptVersion) => void;
+  onActivate: (p: PromptVersion) => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+            {TURN_TYPE_LABELS[group.turn_type] ?? group.turn_type}
+          </Badge>
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            {PROMPT_TYPE_LABELS[group.prompt_type] ?? group.prompt_type}
+          </Badge>
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            {group.segmento}
+          </Badge>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs text-muted-foreground hover:text-foreground"
+          aria-label="Cerrar detalle"
+        >
+          ✕
+        </button>
+      </div>
+
+      {group.active && (
+        <>
+          <div className="flex items-center justify-between border-b px-4 py-2 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Badge className="bg-emerald-600 hover:bg-emerald-600">Activa</Badge>
+              <span className="font-mono text-sm">{group.active.version}</span>
+              <span className="text-xs text-muted-foreground">
+                {group.active.model} · temp {group.active.temperature ?? 0} · max{" "}
+                {group.active.max_tokens ?? "?"}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEvaluate(group.active!)}
+                disabled={busy || evaluating !== null}
+                title="Probar el prompt contra N samples reales"
+              >
+                🧪 Evaluar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onRefine(group.active!)}
+                disabled={busy || refining !== null}
+                title="Conversa con la IA dándole feedback en lenguaje natural"
+              >
+                💬 Refinar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onSuggest(group.active!)}
+                disabled={busy || suggesting !== null}
+                title="Analiza ediciones y rechazos humanos recientes"
+              >
+                🤖 Sugerir
+              </Button>
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => onEdit(group.active!)}
+                disabled={busy}
+              >
+                Editar
+              </Button>
+            </div>
+          </div>
+
+          <div className="px-4 py-3 bg-emerald-50/30 dark:bg-emerald-950/10 border-b space-y-1">
+            {group.active.description && (
+              <div className="text-xs text-muted-foreground">{group.active.description}</div>
+            )}
+            <div className="text-[11px] text-muted-foreground">
+              {group.active.prompt_system.length} chars · actualizada{" "}
+              {formatTime(group.active.updated_at)}
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <pre className="flex-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] font-mono leading-relaxed text-muted-foreground">
+                {group.active.prompt_system.slice(0, 500)}
+                {group.active.prompt_system.length > 500 ? "..." : ""}
+              </pre>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-[11px] h-7"
+              onClick={() => onView(group.active!)}
+            >
+              Ver completo →
+            </Button>
+          </div>
+        </>
+      )}
+
+      {group.history.length > 0 && (
+        <details className="px-4 py-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            {group.history.length} versión{group.history.length === 1 ? "" : "es"} anterior
+            {group.history.length === 1 ? "" : "es"}
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {group.history.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between gap-2 text-sm border-l-2 border-muted pl-2"
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs">{p.version}</span>
+                  <span className="text-xs text-muted-foreground">{p.description ?? "—"}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    ({p.prompt_system.length} chars · {formatTime(p.updated_at)})
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => onView(p)}>
+                    Ver
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onActivate(p)}
+                    disabled={busy}
+                  >
+                    Activar
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function EmptyCellPanel({
+  cell,
+  onCreate,
+  onClose,
+}: {
+  cell: { turn_type: TurnType; prompt_type: PromptType; segmento: Segmento };
+  onCreate: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed bg-card overflow-hidden">
+      <div className="flex items-center justify-between border-b border-dashed bg-muted/10 px-4 py-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+            {TURN_TYPE_LABELS[cell.turn_type] ?? cell.turn_type}
+          </Badge>
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            {PROMPT_TYPE_LABELS[cell.prompt_type]}
+          </Badge>
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            {cell.segmento}
+          </Badge>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs text-muted-foreground hover:text-foreground"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="px-4 py-6 text-center space-y-2">
+        <p className="text-sm text-muted-foreground">
+          No hay prompt para esta combinación todavía.
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          Si {cell.segmento} está vacío y existe un MEGA del mismo turn/tipo, los workflows
+          usan MEGA como fallback.
+        </p>
+        <Button size="sm" variant="default" onClick={onCreate}>
+          + Crear prompt para esta combinación
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PromptsPage() {
   const initial = Route.useLoaderData();
   const router = useRouter();
@@ -143,6 +553,61 @@ function PromptsPage() {
 
   // Agrupar por (turn_type, prompt_type, segmento) y separar activas vs versiones anteriores
   const groups = useMemo(() => groupPrompts(initial.prompts), [initial.prompts]);
+
+  // Turn types con al menos un prompt — solo esos aparecen como tabs
+  const turnTypesPresent = useMemo<TurnType[]>(() => {
+    const set = new Set<TurnType>();
+    for (const g of groups) set.add(g.turn_type);
+    return TURN_TYPE_VALUES.filter((t) => set.has(t));
+  }, [groups]);
+
+  const [selectedTurn, setSelectedTurn] = useState<TurnType>(
+    turnTypesPresent[0] ?? "turn1"
+  );
+  useEffect(() => {
+    if (turnTypesPresent.length > 0 && !turnTypesPresent.includes(selectedTurn)) {
+      setSelectedTurn(turnTypesPresent[0]);
+    }
+  }, [turnTypesPresent, selectedTurn]);
+  const [selectedCell, setSelectedCell] = useState<{
+    turn_type: TurnType;
+    prompt_type: PromptType;
+    segmento: Segmento;
+  } | null>(null);
+
+  // Pipeline counts (cuántos prompts activos por prompt_type a nivel global)
+  const pipelineCounts = useMemo(() => {
+    const counts: Record<PromptType, number> = { classifier: 0, generator: 0, validator: 0 };
+    for (const g of groups) {
+      if (g.active) counts[g.prompt_type]++;
+    }
+    return counts;
+  }, [groups]);
+
+  // Matriz del turn seleccionado: por segmento × prompt_type
+  const matrixSegments = useMemo<Segmento[]>(() => ["MEGA", "Genesis", "Prosperitas"], []);
+  const cellByKey = useMemo(() => {
+    const m = new Map<string, Group>();
+    for (const g of groups) m.set(`${g.turn_type}|${g.prompt_type}|${g.segmento}`, g);
+    return m;
+  }, [groups]);
+
+  function getCell(turn: TurnType, type: PromptType, seg: Segmento): Group | null {
+    return cellByKey.get(`${turn}|${type}|${seg}`) ?? null;
+  }
+
+  // Counts por turn (cuántos prompts activos hay en ese turn)
+  const turnCounts = useMemo(() => {
+    const m = new Map<TurnType, number>();
+    for (const g of groups) {
+      if (g.active) m.set(g.turn_type, (m.get(g.turn_type) ?? 0) + 1);
+    }
+    return m;
+  }, [groups]);
+
+  const selectedGroup = selectedCell
+    ? getCell(selectedCell.turn_type, selectedCell.prompt_type, selectedCell.segmento)
+    : null;
 
   async function handleSaveNew(input: {
     base: PromptVersion;
@@ -262,120 +727,89 @@ function PromptsPage() {
           No hay prompts en la tabla. Ejecuta la migración SQL primero.
         </div>
       ) : (
-        groups.map((g) => (
-          <div key={g.key} className="rounded-lg border bg-card overflow-hidden">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                  {TURN_TYPE_LABELS[g.turn_type] ?? g.turn_type}
-                </Badge>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {PROMPT_TYPE_LABELS[g.prompt_type] ?? g.prompt_type}
-                </Badge>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {g.segmento}
-                </Badge>
-              </div>
-              {g.active && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setEvaluating(g.active!)}
-                    disabled={busy || evaluating !== null}
-                    title="Probar el prompt contra N samples reales antes de iterar"
-                  >
-                    🧪 Evaluar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRefining(g.active!)}
-                    disabled={busy || refining !== null}
-                    title="Conversa con la IA dándole feedback en lenguaje natural para iterar el prompt"
-                  >
-                    💬 Refinar con feedback
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSuggest(g.active!)}
-                    disabled={busy || suggesting !== null}
-                    title="Analiza ediciones y rechazos humanos recientes y propone una v2 del prompt"
-                  >
-                    🤖 Sugerir auto
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => setEditing(g.active!)}
-                    disabled={busy}
-                  >
-                    Editar
-                  </Button>
-                </div>
-              )}
-            </div>
+        <>
+          {/* Pipeline funnel */}
+          <PipelineFunnel counts={pipelineCounts} totalGroups={groups.length} />
 
-            {g.active && (
-              <div className="px-4 py-3 bg-emerald-50/50 dark:bg-emerald-950/10 border-b">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <Badge className="bg-emerald-600 hover:bg-emerald-600">Activa</Badge>
-                    <span className="font-mono text-sm">{g.active.version}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {g.active.model} · temp {g.active.temperature ?? 0} · max {g.active.max_tokens ?? "?"}
-                    </span>
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={() => setViewing(g.active!)}>
-                    Ver completo
-                  </Button>
-                </div>
-                {g.active.description && (
-                  <div className="text-xs text-muted-foreground">{g.active.description}</div>
-                )}
-                <div className="text-xs text-muted-foreground mt-1">
-                  {g.active.prompt_system.length} chars · actualizada {formatTime(g.active.updated_at)}
-                </div>
-                <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] font-mono leading-relaxed text-muted-foreground">
-                  {g.active.prompt_system.slice(0, 500)}
-                  {g.active.prompt_system.length > 500 ? "..." : ""}
-                </pre>
-              </div>
-            )}
-
-            {g.history.length > 0 && (
-              <details className="px-4 py-2">
-                <summary className="cursor-pointer text-xs text-muted-foreground">
-                  {g.history.length} versión{g.history.length === 1 ? "" : "es"} anterior{g.history.length === 1 ? "" : "es"}
-                </summary>
-                <ul className="mt-2 space-y-1">
-                  {g.history.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-2 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs">{p.version}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {p.description ?? "—"}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          ({p.prompt_system.length} chars · {formatTime(p.updated_at)})
-                        </span>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => setViewing(p)}>
-                          Ver
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleActivate(p)} disabled={busy}>
-                          Activar
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
+          {/* Tabs por turn_type */}
+          <div className="flex flex-wrap items-center gap-1 rounded-lg border bg-card p-1.5">
+            {turnTypesPresent.map((t) => {
+              const count = turnCounts.get(t) ?? 0;
+              const active = t === selectedTurn;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTurn(t);
+                    setSelectedCell(null);
+                  }}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  <span>{TURN_TYPE_LABELS[t] ?? t}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-[10px] tabular-nums",
+                      active
+                        ? "bg-primary-foreground/20 text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        ))
+
+          {/* Matriz segmento × prompt_type del turn seleccionado */}
+          <PromptMatrix
+            turnType={selectedTurn}
+            segments={matrixSegments}
+            getCell={getCell}
+            selected={selectedCell}
+            onSelect={(cell) => setSelectedCell(cell)}
+            onCreate={(seg, type) => {
+              setCreatingNew(true);
+              // Pre-seleccionado pero no implementamos prefill; usuario rellena manual
+              void seg;
+              void type;
+            }}
+          />
+
+          {/* Detail panel del cell seleccionado */}
+          {selectedGroup ? (
+            <PromptDetailPanel
+              group={selectedGroup}
+              busy={busy}
+              evaluating={evaluating}
+              refining={refining}
+              suggesting={suggesting}
+              onClose={() => setSelectedCell(null)}
+              onView={(p) => setViewing(p)}
+              onEdit={(p) => setEditing(p)}
+              onEvaluate={(p) => setEvaluating(p)}
+              onRefine={(p) => setRefining(p)}
+              onSuggest={(p) => handleSuggest(p)}
+              onActivate={(p) => handleActivate(p)}
+            />
+          ) : selectedCell ? (
+            <EmptyCellPanel
+              cell={selectedCell}
+              onCreate={() => setCreatingNew(true)}
+              onClose={() => setSelectedCell(null)}
+            />
+          ) : (
+            <p className="text-center text-xs text-muted-foreground italic py-4">
+              Click en una celda de la matriz para ver detalles, editar, evaluar o crear.
+            </p>
+          )}
+        </>
       )}
 
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
