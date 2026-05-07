@@ -442,6 +442,153 @@ Si no detectas patrones suficientemente fuertes (ej. <3 ediciones, ningún patr�
     };
   });
 
+/**
+ * Refinamiento conversacional de un prompt activo. Como una conversación con
+ * Claude: el humano da feedback en lenguaje natural ("hazlo más informal",
+ * "no menciones llamada de 15 min", "añade ejemplo de respuesta a Genesis"),
+ * y Claude devuelve un prompt actualizado + explicación.
+ *
+ * Mantiene un thread de conversación (las turnos previos se incluyen como
+ * contexto en cada llamada) para que el humano pueda iterar varias rondas
+ * antes de guardar.
+ */
+export type ConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type RefinePromptResponse = {
+  ok: boolean;
+  /** Prompt resultante de la última iteración (si Claude lo modificó) */
+  refined_prompt?: string;
+  /** Texto explicativo de Claude sobre qué cambió y por qué */
+  assistant_message?: string;
+  /** Si el prompt no cambió respecto al input (Claude sólo respondió texto) */
+  unchanged?: boolean;
+  cost_tokens?: { input: number; output: number };
+  error?: string;
+};
+
+export const refinePromptWithFeedback = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      /** Prompt actual sobre el que iterar (puede ser el activo o uno editado in-flight) */
+      current_prompt: string;
+      /** Identificación del prompt para contexto en el system prompt de Claude */
+      prompt_type: PromptType;
+      segmento: Segmento;
+      turn_type: TurnType;
+      /** Historia de conversación (roles user/assistant alternados, máx 20 turnos) */
+      history: ConversationTurn[];
+      /** Mensaje nuevo del usuario en este turno */
+      user_message: string;
+    }) => data
+  )
+  .handler(async ({ data }): Promise<RefinePromptResponse> => {
+    const anthKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthKey) {
+      return {
+        ok: false,
+        error: "ANTHROPIC_API_KEY no configurado en Lovable Cloud secrets",
+      };
+    }
+
+    const systemPrompt = `Eres un experto en prompt engineering colaborando con un humano para refinar un prompt productivo. El prompt vive en una pipeline AI que genera/clasifica/valida emails outbound (segmento ${data.segmento}, turn_type ${data.turn_type}, prompt_type ${data.prompt_type}).
+
+REGLAS DE TRABAJO
+
+1. El humano te da feedback en lenguaje natural sobre cómo quiere que cambie el prompt.
+2. Tu trabajo: aplicar ese feedback al prompt actual con cambios MÍNIMOS y QUIRÚRGICOS. No reescribas todo. No añadas reglas hipotéticas.
+3. Si el feedback es ambiguo, pide clarificación EN VEZ DE editar el prompt.
+4. Si el feedback ya está cubierto por el prompt actual, dilo y NO modifiques.
+5. NUNCA elimines secciones críticas del prompt (FORMATO DE SALIDA, ESTRUCTURA JSON, COBERTURA TOTAL si existe).
+
+FORMATO DE RESPUESTA (siempre JSON, sin markdown):
+
+{
+  "assistant_message": "Mensaje conversacional para el humano. Explicas qué cambiaste y por qué, o pides clarificación si dudas. 1-3 frases.",
+  "refined_prompt": "<prompt completo con los cambios aplicados, listo para reemplazar al actual>",
+  "unchanged": false
+}
+
+Si NO modificas el prompt (porque pides clarificación o el feedback no aplica):
+
+{
+  "assistant_message": "...",
+  "refined_prompt": "<el mismo prompt, sin cambios>",
+  "unchanged": true
+}
+
+PROMPT ACTUAL DEL HUMANO:
+
+\`\`\`
+${data.current_prompt}
+\`\`\`
+
+Responde SOLO con el JSON. No incluyas markdown ni texto extra.`;
+
+    // Construir mensajes alternados user/assistant
+    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    for (const t of data.history.slice(-20)) {
+      // Aceptar solo turnos válidos en orden
+      messages.push({ role: t.role, content: t.content });
+    }
+    messages.push({ role: "user", content: data.user_message });
+
+    let resp;
+    try {
+      resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-opus-4-7",
+          max_tokens: 8192,
+          system: systemPrompt,
+          messages,
+        }),
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Error llamando Anthropic: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (!resp.ok) {
+      const body = await resp.text();
+      return { ok: false, error: `Anthropic ${resp.status}: ${body.slice(0, 300)}` };
+    }
+    const respJson = (await resp.json()) as {
+      content?: Array<{ text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = respJson.content?.[0]?.text ?? "";
+    let parsed: { assistant_message?: string; refined_prompt?: string; unchanged?: boolean };
+    try {
+      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      return {
+        ok: false,
+        error: `No pude parsear la respuesta de Claude. Texto: ${text.slice(0, 300)}`,
+      };
+    }
+
+    return {
+      ok: true,
+      refined_prompt: parsed.refined_prompt,
+      assistant_message: parsed.assistant_message,
+      unchanged: parsed.unchanged ?? parsed.refined_prompt === data.current_prompt,
+      cost_tokens: {
+        input: respJson.usage?.input_tokens ?? 0,
+        output: respJson.usage?.output_tokens ?? 0,
+      },
+    };
+  });
+
 function computeNextVersion(existing: string[]): string {
   if (existing.length === 0) return "v1.0";
   const nums = existing
