@@ -57,6 +57,7 @@ export type PromptVersion = {
 
 const TABLE = "cl001_p007_prompt_versions";
 const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
+const OUTCOMES_TABLE = "cl001_p007_outcomes";
 
 function getCreds() {
   const url = process.env.OUTBOUND_SUPABASE_URL;
@@ -875,6 +876,125 @@ export const getEvalSamples = createServerFn({ method: "GET" })
     });
 
     return { samples };
+  });
+
+/**
+ * Stats por versión: cuántas generaciones la usaron + outcomes (replied, booked).
+ *
+ * Atribución best-effort por ventana temporal:
+ * Como el pipeline NO guarda qué prompt_version_id se usó, asumimos que cada
+ * pipeline_row creado en (segmento, turn_type) entre [v.created_at, v_next.created_at)
+ * fue procesado con la versión `v` (la activa en ese momento de esa combinación).
+ *
+ * Limitaciones:
+ * - Si activas manualmente una versión vieja (botón "Activar" sobre una v anterior),
+ *   las generaciones posteriores se atribuirán incorrectamente a la versión más reciente.
+ * - Para precisión absoluta habría que añadir la columna prompt_version_id en pipeline
+ *   y que n8n la rellene. Esto es la versión MVP que funciona retroactivamente sin
+ *   tocar n8n.
+ */
+export type PromptVersionStats = {
+  version_id: string;
+  version: string;
+  is_active: boolean;
+  created_at: string | null;
+  /** Pipeline rows atribuidos a esta versión */
+  generated_count: number;
+  /** De los atribuidos, cuántos replied */
+  replied_count: number;
+  /** De los atribuidos, cuántos booked */
+  booked_count: number;
+  reply_rate: number;
+  booking_rate: number;
+};
+
+export const getPromptStats = createServerFn({ method: "GET" })
+  .inputValidator(
+    (data: { prompt_type: PromptType; segmento: Segmento; turn_type: TurnType }) => data
+  )
+  .handler(async ({ data }): Promise<{ stats: PromptVersionStats[] }> => {
+    // 1. Versiones de la combinación, en orden cronológico
+    const vParams = new URLSearchParams({
+      prompt_type: `eq.${data.prompt_type}`,
+      segmento: `eq.${data.segmento}`,
+      turn_type: `eq.${data.turn_type}`,
+      select: "id,version,is_active,created_at",
+      order: "created_at.asc",
+    });
+    type VRow = { id: string; version: string; is_active: boolean; created_at: string | null };
+    const versions = ((await pgrest(`${TABLE}?${vParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as VRow[];
+    if (versions.length === 0) return { stats: [] };
+
+    // 2. Pipeline rows de la misma (segmento, turn_type), creados desde el primer prompt
+    const earliest = versions[0].created_at ?? new Date(0).toISOString();
+    const pParams = new URLSearchParams({
+      segmento: `eq.${data.segmento}`,
+      turn_type: `eq.${data.turn_type}`,
+      select: "id,created_at",
+      order: "created_at.asc",
+      limit: "5000",
+    });
+    pParams.append("created_at", `gte.${earliest}`);
+    type PRow = { id: string; created_at: string };
+    const pipelineRows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as PRow[];
+
+    // 3. Outcomes de esos pipeline_ids (replied, booked)
+    const repliedSet = new Set<string>();
+    const bookedSet = new Set<string>();
+    if (pipelineRows.length > 0) {
+      const idsList = pipelineRows.map((r) => `"${r.id}"`).join(",");
+      const oParams = new URLSearchParams({
+        select: "pipeline_id,outcome",
+        outcome: "in.(replied,booked)",
+        limit: "10000",
+      });
+      oParams.append("pipeline_id", `in.(${idsList})`);
+      type ORow = { pipeline_id: string; outcome: string };
+      const outcomes = ((await pgrest(`${OUTCOMES_TABLE}?${oParams.toString()}`, {
+        method: "GET",
+      })) ?? []) as ORow[];
+      for (const o of outcomes) {
+        if (o.outcome === "replied") repliedSet.add(o.pipeline_id);
+        if (o.outcome === "booked") bookedSet.add(o.pipeline_id);
+      }
+    }
+
+    // 4. Para cada versión calculamos la ventana [v.created_at, v_next.created_at)
+    const stats: PromptVersionStats[] = versions.map((v, i) => {
+      const start = v.created_at ? Date.parse(v.created_at) : 0;
+      const end =
+        i + 1 < versions.length && versions[i + 1].created_at
+          ? Date.parse(versions[i + 1].created_at!)
+          : Number.POSITIVE_INFINITY;
+
+      let generated = 0;
+      let replied = 0;
+      let booked = 0;
+      for (const r of pipelineRows) {
+        const t = r.created_at ? Date.parse(r.created_at) : 0;
+        if (t < start || t >= end) continue;
+        generated++;
+        if (repliedSet.has(r.id)) replied++;
+        if (bookedSet.has(r.id)) booked++;
+      }
+      return {
+        version_id: v.id,
+        version: v.version,
+        is_active: v.is_active,
+        created_at: v.created_at,
+        generated_count: generated,
+        replied_count: replied,
+        booked_count: booked,
+        reply_rate: generated > 0 ? replied / generated : 0,
+        booking_rate: generated > 0 ? booked / generated : 0,
+      };
+    });
+
+    return { stats };
   });
 
 function computeNextVersion(existing: string[]): string {
