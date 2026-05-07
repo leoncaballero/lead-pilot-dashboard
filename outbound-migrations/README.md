@@ -31,6 +31,10 @@ de roles.
   (Turn 1 + Turn 2 + FU 4h × classifier/generator/validator MEGA) extraídos de
   los workflows. Soporte para edición desde la app `/prompts`.
 
+- `20260507_001_extend_followups_24h_3d.sql` — Añade columna fu_3d_sent_at
+  + extiende CHECK de turn_type en prompt_versions y pipeline para incluir
+  follow_up_24h, follow_up_3d, turn3_generic, objection_response, booking_propose.
+
 ## Env vars necesarias en Lovable Cloud
 
 Settings → Project → Secrets:
