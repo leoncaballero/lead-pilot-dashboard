@@ -250,6 +250,26 @@ export const deepReviewCase = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Deshacer una acción de SDR (reject o deep review). Reset el caso a
+ * pending_review limpiando sdr_action + edit_reason. Solo segura para
+ * acciones que NO disparan envío real (reject, deep review). Aprobar y editar
+ * disparan Smartlead inmediatamente — no hay forma de desenviar un email.
+ */
+export const undoSdrAction = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await updateCase(data.id, {
+      sdr_action: null,
+      sdr_user_id: null,
+      sdr_action_timestamp: null,
+      status: "pending_review",
+      edit_reason: null,
+    });
+    await logEvent(data.id, "sdr_action_undone");
+    return { ok: true };
+  });
+
 export const editCase = createServerFn({ method: "POST" })
   .inputValidator(
     (data: {
