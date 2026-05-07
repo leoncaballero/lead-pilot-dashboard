@@ -602,6 +602,44 @@ Responde SOLO con el JSON. No incluyas markdown ni texto extra.`;
  * Cada test case se ejecuta en paralelo (con max concurrency 5 para evitar
  * rate limit de Anthropic).
  */
+/**
+ * Intenta parsear como JSON un texto que podría venir envuelto en markdown
+ * (```json ... ```), con prosa antes/después, o limpio. Si no encuentra JSON
+ * válido, devuelve null.
+ */
+function tryParseJsonish(text: string): Record<string, unknown> | null {
+  if (!text) return null;
+  const t = text.trim();
+  // 1. ¿Es JSON limpio?
+  if (t.startsWith("{")) {
+    try {
+      return JSON.parse(t);
+    } catch {
+      // sigue intentando
+    }
+  }
+  // 2. Bloque markdown ```json...```
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {
+      // sigue intentando
+    }
+  }
+  // 3. Buscar primer { y último } y probar
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first !== -1 && last > first) {
+    try {
+      return JSON.parse(t.slice(first, last + 1));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export type EvalTestCase = {
   id: string;
   /** El user message que se manda a Claude (lo que vería como input en el flujo real) */
@@ -704,13 +742,7 @@ export const evalPrompt = createServerFn({ method: "POST" })
           usage?: { input_tokens?: number; output_tokens?: number };
         };
         const text = json.content?.[0]?.text ?? "";
-        let parsed: Record<string, unknown> | null = null;
-        try {
-          const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
-          parsed = JSON.parse(cleaned);
-        } catch {
-          parsed = null; // No es JSON, OK
-        }
+        const parsed = tryParseJsonish(text);
         return {
           test_case_id: tc.id,
           test_case_label: tc.label,

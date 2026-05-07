@@ -184,7 +184,7 @@ function ActivityItem({
             <span className="font-medium">{meta.label}</span>
             <span className="text-muted-foreground">·</span>
             <span className="truncate">
-              {event.lead_name ?? event.lead_email ?? event.pipeline_id.slice(0, 8)}
+              {event.lead_name ?? event.lead_email ?? event.pipeline_id?.slice(0, 8) ?? "—"}
             </span>
             {event.segmento && (
               <span className="rounded bg-muted px-1 py-0 text-[10px] uppercase">
