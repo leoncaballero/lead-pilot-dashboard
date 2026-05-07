@@ -33,6 +33,7 @@ import {
   getRealtimeConfig,
   getTriageCases,
   rejectCase,
+  undoSdrAction,
   type ClassificationOutput,
   type TriageCase,
 } from "@/api/triage.functions";
@@ -295,6 +296,7 @@ function TriagePage() {
   const approveFn = useServerFn(approveCase);
   const rejectFn = useServerFn(rejectCase);
   const deepFn = useServerFn(deepReviewCase);
+  const undoFn = useServerFn(undoSdrAction);
   const editFn = useServerFn(editCase);
 
   // Mantener selección válida cuando la lista cambia (por filtro o realtime)
@@ -376,12 +378,33 @@ function TriagePage() {
   async function runAction(
     label: string,
     fn: () => Promise<unknown>,
-    currentId: string
+    currentId: string,
+    options?: { undoable?: boolean }
   ) {
     setPending(true);
     try {
       await fn();
-      toast.success(label);
+      if (options?.undoable) {
+        // Toast con botón "Deshacer" — solo para acciones que no disparan envío real
+        // (reject, deep review). Aprobar y editar disparan Smartlead inmediatamente.
+        toast.success(label, {
+          action: {
+            label: "Deshacer",
+            onClick: async () => {
+              try {
+                await undoFn({ data: { id: currentId } });
+                toast.message("Acción deshecha — caso devuelto a pending_review");
+                await router.invalidate();
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Error al deshacer");
+              }
+            },
+          },
+          duration: 8000,
+        });
+      } else {
+        toast.success(label);
+      }
       advanceAfter(currentId);
       await router.invalidate();
     } catch (err) {
@@ -451,6 +474,21 @@ function TriagePage() {
       );
     }
     function onKey(e: KeyboardEvent) {
+      // Cmd/Ctrl+Shift+A — bulk select todos los IA-auto + abrir confirm
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "a") {
+        if (editOpen || confirmRejectOpen || bulkApproveOpen || bulkRejectOpen) return;
+        e.preventDefault();
+        const aiCases = (cases as TriageCase[]).filter(
+          (c) => aiWouldAutoApprove(c) && !hasMissingTurn1Bug(c)
+        );
+        if (aiCases.length === 0) {
+          toast.message("No hay casos AI-auto disponibles");
+          return;
+        }
+        setSelectedIds(new Set(aiCases.map((c) => c.id)));
+        setBulkApproveOpen(true);
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTyping(e.target)) return;
       if (editOpen || confirmRejectOpen || bulkApproveOpen || bulkRejectOpen) return;
@@ -514,6 +552,7 @@ function TriagePage() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <SlaIndicator cases={cases as TriageCase[]} />
           <ConfidenceLegend
             cases={allCases as TriageCase[]}
             activeFilter={confidenceFilter}
@@ -658,7 +697,8 @@ function TriagePage() {
                   runAction(
                     "Enviado a Revisión Profunda",
                     () => deepFn({ data: { id: selected.id } }),
-                    selected.id
+                    selected.id,
+                    { undoable: true }
                   )
                 }
               />
@@ -687,7 +727,8 @@ function TriagePage() {
             await runAction(
               "Caso rechazado",
               () => rejectFn({ data: { id: selected.id, reasons, otherReason } }),
-              selected.id
+              selected.id,
+              { undoable: true }
             );
             setConfirmRejectOpen(false);
           }}
@@ -799,6 +840,7 @@ function TriagePage() {
             <ShortcutRow keys="E" label="Editar caso actual" />
             <ShortcutRow keys="R" label="Rechazar caso actual" />
             <ShortcutRow keys="D" label="Revisión profunda" />
+            <ShortcutRow keys="⌘⇧A" label="Aprobar TODOS los AI-auto en bloque" />
             <ShortcutRow keys="?" label="Mostrar/ocultar esta ayuda" />
           </ul>
           <p className="text-xs text-muted-foreground">
@@ -933,6 +975,48 @@ function CaseListItem({
         </div>
       </div>
     </div>
+  );
+}
+
+function SlaIndicator({ cases }: { cases: TriageCase[] }) {
+  // Cuenta de cases con SLA atrasado (>15 min en cola = amber, >25 min = red)
+  let amber = 0;
+  let red = 0;
+  for (const c of cases) {
+    const min = minutesSince(c.reply_timestamp);
+    if (min === null) continue;
+    if (min > 25) red += 1;
+    else if (min > 15) amber += 1;
+  }
+  if (red === 0 && amber === 0) {
+    return (
+      <span
+        className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400"
+        title="Todos los casos dentro del SLA (≤15 min)"
+      >
+        ⏱ SLA OK
+      </span>
+    );
+  }
+  return (
+    <span className="hidden md:inline-flex items-center gap-2 text-[11px]">
+      {red > 0 && (
+        <span
+          className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium"
+          title={`${red} caso${red === 1 ? "" : "s"} con >25 min en cola`}
+        >
+          ⏰ {red} críticos
+        </span>
+      )}
+      {amber > 0 && (
+        <span
+          className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium"
+          title={`${amber} caso${amber === 1 ? "" : "s"} con 15-25 min en cola`}
+        >
+          ⏱ {amber} a tiempo justo
+        </span>
+      )}
+    </span>
   );
 }
 
