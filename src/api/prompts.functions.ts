@@ -56,6 +56,7 @@ export type PromptVersion = {
 };
 
 const TABLE = "cl001_p007_prompt_versions";
+const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
 
 function getCreds() {
   const url = process.env.OUTBOUND_SUPABASE_URL;
@@ -587,6 +588,262 @@ Responde SOLO con el JSON. No incluyas markdown ni texto extra.`;
         output: respJson.usage?.output_tokens ?? 0,
       },
     };
+  });
+
+/**
+ * Eval mode: ejecuta un prompt contra N test cases (samples reales o custom)
+ * y devuelve los outputs para que el humano evalúe ANTES de activar el prompt.
+ *
+ * Flujo:
+ * 1. Usuario edita/refina un prompt
+ * 2. Antes de guardar, click "🧪 Evaluar" → eval contra N samples
+ * 3. Ve outputs, decide si guardar/iterar
+ *
+ * Cada test case se ejecuta en paralelo (con max concurrency 5 para evitar
+ * rate limit de Anthropic).
+ */
+export type EvalTestCase = {
+  id: string;
+  /** El user message que se manda a Claude (lo que vería como input en el flujo real) */
+  user_message: string;
+  /** Etiqueta opcional para mostrar en la UI */
+  label?: string;
+};
+
+export type EvalResult = {
+  test_case_id: string;
+  test_case_label?: string;
+  test_case_input: string;
+  output_raw: string;
+  /** Si el prompt produce JSON parseable, lo expongo pretty-printed */
+  output_parsed?: Record<string, unknown> | null;
+  output_error?: string;
+  duration_ms: number;
+  tokens?: { input: number; output: number };
+};
+
+export type EvalResponse = {
+  ok: boolean;
+  results: EvalResult[];
+  total_tokens: { input: number; output: number };
+  total_duration_ms: number;
+  error?: string;
+};
+
+export const evalPrompt = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      prompt_system: string;
+      model: string;
+      temperature?: number;
+      max_tokens?: number;
+      test_cases: EvalTestCase[];
+    }) => data
+  )
+  .handler(async ({ data }): Promise<EvalResponse> => {
+    const anthKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthKey) {
+      return {
+        ok: false,
+        results: [],
+        total_tokens: { input: 0, output: 0 },
+        total_duration_ms: 0,
+        error: "ANTHROPIC_API_KEY no configurado en Lovable Cloud secrets",
+      };
+    }
+    if (data.test_cases.length === 0) {
+      return {
+        ok: true,
+        results: [],
+        total_tokens: { input: 0, output: 0 },
+        total_duration_ms: 0,
+      };
+    }
+
+    const includeTemperature = !data.model.toLowerCase().includes("opus");
+    const start = Date.now();
+
+    // Concurrencia 5 para no saturar rate limit
+    const CONCURRENCY = 5;
+    const results: EvalResult[] = [];
+
+    async function runOne(tc: EvalTestCase): Promise<EvalResult> {
+      const t0 = Date.now();
+      try {
+        const body: Record<string, unknown> = {
+          model: data.model,
+          max_tokens: data.max_tokens ?? 2048,
+          system: data.prompt_system,
+          messages: [{ role: "user", content: tc.user_message }],
+        };
+        if (includeTemperature && typeof data.temperature === "number") {
+          body.temperature = data.temperature;
+        }
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": anthKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const errText = await resp.text();
+          return {
+            test_case_id: tc.id,
+            test_case_label: tc.label,
+            test_case_input: tc.user_message,
+            output_raw: "",
+            output_error: `Anthropic ${resp.status}: ${errText.slice(0, 200)}`,
+            duration_ms: Date.now() - t0,
+          };
+        }
+        const json = (await resp.json()) as {
+          content?: Array<{ text?: string }>;
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+        const text = json.content?.[0]?.text ?? "";
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
+          parsed = JSON.parse(cleaned);
+        } catch {
+          parsed = null; // No es JSON, OK
+        }
+        return {
+          test_case_id: tc.id,
+          test_case_label: tc.label,
+          test_case_input: tc.user_message,
+          output_raw: text,
+          output_parsed: parsed,
+          duration_ms: Date.now() - t0,
+          tokens: {
+            input: json.usage?.input_tokens ?? 0,
+            output: json.usage?.output_tokens ?? 0,
+          },
+        };
+      } catch (err) {
+        return {
+          test_case_id: tc.id,
+          test_case_label: tc.label,
+          test_case_input: tc.user_message,
+          output_raw: "",
+          output_error: err instanceof Error ? err.message : String(err),
+          duration_ms: Date.now() - t0,
+        };
+      }
+    }
+
+    // Pool de concurrencia simple
+    const queue = [...data.test_cases];
+    async function worker() {
+      while (queue.length > 0) {
+        const tc = queue.shift();
+        if (!tc) break;
+        const r = await runOne(tc);
+        results.push(r);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, data.test_cases.length) }, worker));
+
+    // Reordenar resultados al orden original de test_cases
+    const order = new Map(data.test_cases.map((tc, i) => [tc.id, i]));
+    results.sort((a, b) => (order.get(a.test_case_id) ?? 0) - (order.get(b.test_case_id) ?? 0));
+
+    const totalTokens = results.reduce(
+      (acc, r) => ({
+        input: acc.input + (r.tokens?.input ?? 0),
+        output: acc.output + (r.tokens?.output ?? 0),
+      }),
+      { input: 0, output: 0 }
+    );
+
+    return {
+      ok: true,
+      results,
+      total_tokens: totalTokens,
+      total_duration_ms: Date.now() - start,
+    };
+  });
+
+/**
+ * Carga muestras de test cases desde el pipeline para usar en el eval.
+ * Para classifier: replies originales recientes.
+ * Para generator/validator: necesitan más contexto (clasificación + lead),
+ * por ahora devolvemos sólo replies + el SDR construye el contexto manualmente
+ * o copia del que vió en /history.
+ */
+export type EvalSample = {
+  pipeline_id: string;
+  lead_name: string | null;
+  lead_email: string | null;
+  segmento: string | null;
+  reply_text: string;
+  /** User message construido según el prompt_type (formato real que usaría n8n) */
+  suggested_user_message: string;
+};
+
+export const getEvalSamples = createServerFn({ method: "GET" })
+  .inputValidator(
+    (data: {
+      prompt_type: PromptType;
+      segmento?: Segmento;
+      turn_type: TurnType;
+      limit?: number;
+    }) => data
+  )
+  .handler(async ({ data }): Promise<{ samples: EvalSample[] }> => {
+    const limit = data.limit ?? 10;
+    const params = new URLSearchParams({
+      select: "id,lead_name,lead_email,segmento,reply_original,classification_output,turn_1_generated",
+      order: "created_at.desc.nullslast",
+      limit: String(limit * 3), // sobre-fetch para filtrar
+    });
+    if (data.segmento) params.append("segmento", `eq.${data.segmento}`);
+    type Row = {
+      id: string;
+      lead_name: string | null;
+      lead_email: string | null;
+      segmento: string | null;
+      reply_original: string | null;
+      classification_output: Record<string, unknown> | null;
+      turn_1_generated: string | null;
+    };
+    const rows = (await pgrest(`${PIPELINE_TABLE}?${params.toString()}`, {
+      method: "GET",
+    })) as Row[];
+
+    const filtered = (rows ?? []).filter((r) => r.reply_original && r.reply_original.trim().length > 5);
+    const samples: EvalSample[] = filtered.slice(0, limit).map((r) => {
+      let userMsg = "";
+      if (data.prompt_type === "classifier") {
+        // Mismo formato que usa el WF[01]
+        userMsg = `Asunto del hilo: "(asunto del cold email)"\n\nRespuesta del lead:\n"""\n${r.reply_original}\n"""`;
+      } else if (data.prompt_type === "generator") {
+        // Generator necesita lead info + clasificación
+        const clasif = r.classification_output ?? {};
+        userMsg =
+          `Datos del lead:\n- nombre: ${r.lead_name ?? "Lead"}\n- setter: Laura\n\n` +
+          `Output del clasificador:\n${JSON.stringify(clasif, null, 2)}`;
+      } else {
+        // Validator necesita generator + classifier outputs
+        userMsg =
+          `Datos del lead:\n- nombre: ${r.lead_name ?? "Lead"}\n- setter: Laura\n\n` +
+          `Output del clasificador:\n${JSON.stringify(r.classification_output ?? {}, null, 2)}\n\n` +
+          `Output del generador:\n${r.turn_1_generated ?? "(no disponible)"}`;
+      }
+      return {
+        pipeline_id: r.id,
+        lead_name: r.lead_name,
+        lead_email: r.lead_email,
+        segmento: r.segmento,
+        reply_text: r.reply_original ?? "",
+        suggested_user_message: userMsg,
+      };
+    });
+
+    return { samples };
   });
 
 function computeNextVersion(existing: string[]): string {
