@@ -37,6 +37,7 @@ import {
   type TriageCase,
 } from "@/api/triage.functions";
 import { ConversationThread } from "@/components/ConversationThread";
+import { HubSpotLeadContextCard } from "@/components/HubSpotLeadContext";
 
 export const Route = createFileRoute("/_authenticated/triage")({
   loader: async () => {
@@ -1208,6 +1209,9 @@ function CaseDetail({
 
         {/* Columna derecha: Turn 1 destacado + score + acciones (scrollable) */}
         <div className="min-h-0 overflow-y-auto p-5 space-y-5">
+          {/* Contexto HubSpot del lead — ayuda a juzgar si avanzar y cómo */}
+          <HubSpotLeadContextCard hubspotContactId={c.hubspot_contact_id ?? null} />
+
           {/* Turn 1: lo más importante, primero, en font sans para lectura natural */}
           <div>
             <div className="mb-2 flex items-center justify-between">

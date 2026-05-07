@@ -43,3 +43,7 @@ Settings → Project → Secrets:
 - `SMARTLEAD_API_KEY` — API key de Smartlead para cargar el hilo completo de
   conversaciones. La misma que está hardcodeada en los workflows de n8n. Sin ella,
   la sección "Conversación completa" muestra un error.
+- `HUBSPOT_API_KEY` — Private App PAT de HubSpot (region EU1, scopes: contacts,
+  companies, engagements/meetings, engagements/calls — todos read). Usado por la
+  tarjeta "Contexto HubSpot" en Triage y History detail. Sin él, la tarjeta
+  muestra un error pero el resto sigue funcionando.

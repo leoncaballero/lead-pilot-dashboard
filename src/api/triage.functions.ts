@@ -29,6 +29,7 @@ export type TriageCase = {
   id: string;
   smartlead_lead_id?: string | null;
   smartlead_thread_id?: string | null;
+  hubspot_contact_id?: string | null;
   lead_name?: string | null;
   lead_email?: string | null;
   reply_original?: string | null;
