@@ -6,19 +6,26 @@ import {
   getAnalyticsSummary,
   getTopEditReasons,
   getDailyVolume,
+  getOutcomesFunnel,
+  getRecentOutcomes,
   type AnalyticsSummary,
   type TopEditReason,
   type DailyVolumePoint,
+  type OutcomesFunnel,
+  type RecentOutcome,
 } from "@/api/analytics.functions";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
   loader: async () => {
-    const [summary, topReasons, daily] = await Promise.all([
-      getAnalyticsSummary(),
-      getTopEditReasons(),
-      getDailyVolume(),
-    ]);
-    return { summary, topReasons, daily };
+    const [summary, topReasons, daily, funnel, recentOutcomes] =
+      await Promise.all([
+        getAnalyticsSummary(),
+        getTopEditReasons(),
+        getDailyVolume(),
+        getOutcomesFunnel(),
+        getRecentOutcomes(),
+      ]);
+    return { summary, topReasons, daily, funnel, recentOutcomes };
   },
   staleTime: 30_000,
   pendingComponent: AnalyticsPending,
@@ -55,7 +62,7 @@ function AnalyticsPending() {
 }
 
 function AnalyticsPage() {
-  const { summary, topReasons, daily } = Route.useLoaderData();
+  const { summary, topReasons, daily, funnel, recentOutcomes } = Route.useLoaderData();
   const router = useRouter();
 
   useEffect(() => {
@@ -77,6 +84,8 @@ function AnalyticsPage() {
         </div>
       </div>
 
+      <OutcomesFunnelSection funnel={funnel} />
+
       <DecisionRatesSection summary={summary} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -87,8 +96,164 @@ function AnalyticsPage() {
       </div>
 
       <DailyVolumePanel daily={daily} />
+
+      <RecentOutcomesPanel outcomes={recentOutcomes} />
     </div>
   );
+}
+
+function OutcomesFunnelSection({ funnel }: { funnel: OutcomesFunnel }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Funnel — últimos 30 días
+        </h2>
+        <span className="text-[11px] text-muted-foreground">
+          desde {new Date(Date.now() - 30 * 86400000).toLocaleDateString("es-ES", {day: "2-digit", month: "short"})}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <KpiCard
+          label="Turn 1 enviados"
+          value={funnel.sent_total.toString()}
+          sub="cohort base del funnel"
+        />
+        <KpiCard
+          label="Respondieron al Turn 1"
+          value={`${funnel.replied_total} · ${pct(funnel.reply_rate)}`}
+          sub={
+            funnel.sent_total === 0
+              ? "—"
+              : `${funnel.replied_total} de ${funnel.sent_total}`
+          }
+          tone={
+            funnel.sent_total === 0
+              ? undefined
+              : funnel.reply_rate >= 0.3
+              ? "green"
+              : funnel.reply_rate >= 0.15
+              ? "amber"
+              : "red"
+          }
+        />
+        <KpiCard
+          label="Agendaron reunión"
+          value={`${funnel.booked_total} · ${pct(funnel.booking_rate)}`}
+          sub={
+            funnel.replied_total > 0
+              ? `${pct(funnel.booking_rate_of_replied)} de los que respondieron`
+              : "—"
+          }
+          tone={
+            funnel.sent_total === 0
+              ? undefined
+              : funnel.booking_rate >= 0.05
+              ? "green"
+              : funnel.booking_rate >= 0.02
+              ? "amber"
+              : "red"
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function RecentOutcomesPanel({ outcomes }: { outcomes: RecentOutcome[] }) {
+  if (outcomes.length === 0) {
+    return (
+      <Panel title="Outcomes recientes" sub="Replies y bookings detectados">
+        <p className="text-sm text-muted-foreground italic">
+          Aún no hay outcomes registrados. En cuanto un lead responda a un Turn 1
+          enviado o agende reunión, aparecerá aquí.
+        </p>
+      </Panel>
+    );
+  }
+  return (
+    <Panel
+      title="Outcomes recientes"
+      sub={`Últimos ${outcomes.length} eventos · replies y bookings`}
+    >
+      <ul className="divide-y">
+        {outcomes.map((o) => (
+          <li key={o.id} className="py-2 flex items-start gap-3 text-sm">
+            <span
+              className={cn(
+                "mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+                o.outcome === "replied" &&
+                  "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                o.outcome === "booked" &&
+                  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+                o.outcome !== "replied" && o.outcome !== "booked" &&
+                  "bg-muted text-muted-foreground"
+              )}
+              title={o.outcome}
+            >
+              {o.outcome === "replied" ? "↩" : o.outcome === "booked" ? "🗓" : "•"}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium truncate">
+                  {o.lead_name || o.lead_email || o.pipeline_id.slice(0, 8)}
+                </span>
+                {o.segmento && (
+                  <span className="rounded bg-muted px-1.5 py-0 text-[10px] uppercase">
+                    {o.segmento}
+                  </span>
+                )}
+                <span className="text-[11px] text-muted-foreground">
+                  {humanOutcome(o.outcome)} · {o.outcome_source.replace("_", " ")}
+                </span>
+              </div>
+              {o.lead_email && o.lead_name && (
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {o.lead_email}
+                </div>
+              )}
+            </div>
+            <span className="text-[11px] text-muted-foreground shrink-0">
+              {formatRelTime(o.occurred_at)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+function humanOutcome(outcome: string): string {
+  switch (outcome) {
+    case "replied":
+      return "respondió";
+    case "booked":
+      return "agendó reunión";
+    case "rescheduled":
+      return "reagendó";
+    case "no_show":
+      return "no asistió";
+    case "attended":
+      return "asistió";
+    case "closed_won":
+      return "cerrado win";
+    case "closed_lost":
+      return "cerrado lost";
+    default:
+      return outcome;
+  }
+}
+
+function formatRelTime(ts?: string | null): string {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "ahora";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
+  if (diff < 7 * 86400) return `${Math.floor(diff / 86400)} d`;
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
 }
 
 function DecisionRatesSection({ summary }: { summary: AnalyticsSummary }) {
