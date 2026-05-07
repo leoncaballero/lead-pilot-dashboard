@@ -1062,6 +1062,63 @@ function extractEmailBody(
   return { body: null, rest: parsed };
 }
 
+function humanizeKey(k: string): string {
+  const lower = k.replace(/_/g, " ");
+  // Auto-cuestión para keys booleanas comunes
+  if (/^(es|tiene|pidio|puede|hay|fue|debe|debería)\b/i.test(lower)) {
+    return "¿" + lower.charAt(0).toUpperCase() + lower.slice(1) + "?";
+  }
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function renderFieldValue(v: unknown): import("react").ReactNode {
+  if (v === null || v === undefined || v === "") {
+    return <span className="text-muted-foreground italic">—</span>;
+  }
+  if (typeof v === "boolean") {
+    return v ? (
+      <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+        ✓ Sí
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300">
+        ✗ No
+      </span>
+    );
+  }
+  if (typeof v === "number") {
+    return <span className="font-mono tabular-nums">{v}</span>;
+  }
+  if (typeof v === "string") {
+    return (
+      <span className="whitespace-pre-wrap break-words leading-relaxed">{v}</span>
+    );
+  }
+  // arrays / objetos: pretty JSON
+  return (
+    <pre className="mt-0.5 rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-32 overflow-y-auto">
+      {JSON.stringify(v, null, 2)}
+    </pre>
+  );
+}
+
+function StructuredFieldsView({ data }: { data: Record<string, unknown> }) {
+  const entries = Object.entries(data);
+  if (entries.length === 0) {
+    return <p className="text-[11px] italic text-muted-foreground">(JSON vacío)</p>;
+  }
+  return (
+    <dl className="rounded border bg-emerald-50/30 divide-y dark:bg-emerald-950/10">
+      {entries.map(([k, v]) => (
+        <div key={k} className="grid grid-cols-[160px_1fr] gap-3 px-3 py-1.5 text-[12px]">
+          <dt className="text-muted-foreground font-medium">{humanizeKey(k)}</dt>
+          <dd className="min-w-0">{renderFieldValue(v)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function EvalResultCard({
   result,
   promptType,
@@ -1073,6 +1130,7 @@ function EvalResultCard({
 }) {
   const [showInput, setShowInput] = useState(false);
   const [showRest, setShowRest] = useState(false);
+  const [showRawJson, setShowRawJson] = useState(false);
   const hasError = !!result.output_error;
 
   const extracted =
@@ -1129,18 +1187,26 @@ function EvalResultCard({
               >
                 {showRest ? "Ocultar metadata" : `Ver metadata (${restEntries.length})`}
               </button>
-              {showRest && (
-                <pre className="rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-40 overflow-y-auto">
-                  {JSON.stringify(extracted!.rest, null, 2)}
-                </pre>
-              )}
+              {showRest && <StructuredFieldsView data={extracted!.rest} />}
             </>
           )}
         </>
       ) : result.output_parsed ? (
-        <pre className="rounded bg-emerald-50/60 p-1.5 text-[11px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto dark:bg-emerald-950/20">
-          {JSON.stringify(result.output_parsed, null, 2)}
-        </pre>
+        <>
+          <StructuredFieldsView data={result.output_parsed} />
+          <button
+            type="button"
+            onClick={() => setShowRawJson((v) => !v)}
+            className="text-[10px] underline text-muted-foreground"
+          >
+            {showRawJson ? "Ocultar JSON crudo" : "Ver JSON crudo"}
+          </button>
+          {showRawJson && (
+            <pre className="rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto">
+              {JSON.stringify(result.output_parsed, null, 2)}
+            </pre>
+          )}
+        </>
       ) : (
         <pre className="rounded bg-muted/40 p-1.5 text-[11px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto">
           {result.output_raw}
