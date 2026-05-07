@@ -855,7 +855,7 @@ function EvalDialog({
             }
           >
             {base.segmento === "MEGA" && <option value="">cualquiera</option>}
-            {SEGMENTO_VALUES.filter((s) => s !== "MEGA").map((s) => (
+            {(["MEGA", "Genesis", "Prosperitas"] as Segmento[]).map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
@@ -986,7 +986,12 @@ function EvalDialog({
                 </p>
               )}
               {results.map((r) => (
-                <EvalResultCard key={r.test_case_id} result={r} />
+                <EvalResultCard
+                  key={r.test_case_id}
+                  result={r}
+                  promptType={base.prompt_type}
+                  turnType={base.turn_type}
+                />
               ))}
             </div>
           </div>
@@ -1018,13 +1023,69 @@ function EvalDialog({
   );
 }
 
-function EvalResultCard({ result }: { result: EvalResult }) {
+/**
+ * Saca de un JSON parseado el campo principal con el contenido del email
+ * (turn_1, turn_2, follow_up_*, mensaje, respuesta, body...) si existe y
+ * es un string lo bastante largo. Devuelve también el resto del JSON sin
+ * ese campo, para mostrar la metadata abajo.
+ */
+function extractEmailBody(
+  parsed: Record<string, unknown>,
+  turnType: string
+): { body: string | null; rest: Record<string, unknown> } {
+  const candidates = [
+    turnType, // ej "turn1" → mira "turn1"
+    turnType.replace(/_generic$/, ""), // turn2_generic → turn2
+    turnType.replace(/^turn(\d)$/, "turn_$1"), // turn1 → turn_1
+    "turn_1",
+    "turn_2",
+    "turn_3",
+    "follow_up_4h",
+    "follow_up_24h",
+    "follow_up_3d",
+    "objection_response",
+    "booking_propose",
+    "respuesta",
+    "mensaje",
+    "body",
+    "email",
+    "content",
+  ];
+  for (const k of candidates) {
+    const v = parsed[k];
+    if (typeof v === "string" && v.trim().length > 30) {
+      const rest = { ...parsed };
+      delete rest[k];
+      return { body: v, rest };
+    }
+  }
+  return { body: null, rest: parsed };
+}
+
+function EvalResultCard({
+  result,
+  promptType,
+  turnType,
+}: {
+  result: EvalResult;
+  promptType: PromptType;
+  turnType: TurnType;
+}) {
   const [showInput, setShowInput] = useState(false);
+  const [showRest, setShowRest] = useState(false);
   const hasError = !!result.output_error;
+
+  const extracted =
+    !hasError && result.output_parsed && promptType !== "classifier"
+      ? extractEmailBody(result.output_parsed, turnType)
+      : null;
+  const hasRenderedBody = !!extracted?.body;
+  const restEntries = extracted ? Object.entries(extracted.rest) : [];
+
   return (
     <div
       className={cn(
-        "rounded border p-2 space-y-1 text-[11px]",
+        "rounded border p-2 space-y-1.5 text-xs",
         hasError ? "border-red-300 bg-red-50/50 dark:bg-red-950/20" : "bg-card"
       )}
     >
@@ -1049,16 +1110,39 @@ function EvalResultCard({ result }: { result: EvalResult }) {
           {result.test_case_input}
         </pre>
       )}
+
       {hasError ? (
         <pre className="rounded bg-red-100/60 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug text-red-800 dark:bg-red-950/40 dark:text-red-300">
           {result.output_error}
         </pre>
+      ) : hasRenderedBody ? (
+        <>
+          <div className="rounded border bg-emerald-50/40 px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap dark:bg-emerald-950/20 dark:text-emerald-50">
+            {extracted!.body}
+          </div>
+          {restEntries.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowRest((v) => !v)}
+                className="text-[10px] underline text-muted-foreground"
+              >
+                {showRest ? "Ocultar metadata" : `Ver metadata (${restEntries.length})`}
+              </button>
+              {showRest && (
+                <pre className="rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-40 overflow-y-auto">
+                  {JSON.stringify(extracted!.rest, null, 2)}
+                </pre>
+              )}
+            </>
+          )}
+        </>
       ) : result.output_parsed ? (
-        <pre className="rounded bg-emerald-50/60 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto dark:bg-emerald-950/20">
+        <pre className="rounded bg-emerald-50/60 p-1.5 text-[11px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto dark:bg-emerald-950/20">
           {JSON.stringify(result.output_parsed, null, 2)}
         </pre>
       ) : (
-        <pre className="rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto">
+        <pre className="rounded bg-muted/40 p-1.5 text-[11px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto">
           {result.output_raw}
         </pre>
       )}
