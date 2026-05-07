@@ -11,6 +11,7 @@ import {
   FileText,
   Columns3,
   Trophy,
+  Workflow,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,6 +41,7 @@ const insightsItems = [
 
 const systemItems = [
   { title: "Prompts", url: "/prompts", icon: FileText },
+  { title: "Estrategias", url: "/strategies", icon: Workflow },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
