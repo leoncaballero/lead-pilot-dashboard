@@ -10,6 +10,7 @@ import {
   Plane,
   FileText,
   Columns3,
+  Trophy,
 } from "lucide-react";
 import {
   Sidebar,
@@ -33,6 +34,7 @@ const mainItems = [
 
 const insightsItems = [
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
+  { title: "Prompt Performance", url: "/prompt-performance", icon: Trophy },
   { title: "Activity", url: "/activity", icon: Activity },
 ];
 
