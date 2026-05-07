@@ -243,7 +243,6 @@ export type SuggestPromptResponse = {
   error?: string;
 };
 
-const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
 const EDIT_REASONS_TABLE = "cl001_p007_edit_reasons";
 
 export const suggestPromptImprovements = createServerFn({ method: "POST" })
