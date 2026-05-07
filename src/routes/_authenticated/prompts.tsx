@@ -21,6 +21,8 @@ import {
   activatePromptVersion,
   suggestPromptImprovements,
   refinePromptWithFeedback,
+  evalPrompt,
+  getEvalSamples,
   PROMPT_TYPE_VALUES,
   SEGMENTO_VALUES,
   TURN_TYPE_VALUES,
@@ -32,6 +34,8 @@ import {
   type TurnType,
   type SuggestPromptResponse,
   type ConversationTurn,
+  type EvalTestCase,
+  type EvalResult,
 } from "@/api/prompts.functions";
 
 const TURN_TYPE_LABELS: Record<TurnType, string> = {
@@ -96,10 +100,13 @@ function PromptsPage() {
   const [suggestion, setSuggestion] = useState<SuggestPromptResponse | null>(null);
   const [creatingNew, setCreatingNew] = useState(false);
   const [refining, setRefining] = useState<PromptVersion | null>(null);
+  const [evaluating, setEvaluating] = useState<PromptVersion | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const suggestFn = useServerFn(suggestPromptImprovements);
   const refineFn = useServerFn(refinePromptWithFeedback);
+  const evalFn = useServerFn(evalPrompt);
+  const samplesFn = useServerFn(getEvalSamples);
 
   // Combos existentes — usado por el dialog de crear nuevo para mostrar duplicados
   const existingCombos = useMemo(() => {
@@ -274,6 +281,15 @@ function PromptsPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => setEvaluating(g.active!)}
+                    disabled={busy || evaluating !== null}
+                    title="Probar el prompt contra N samples reales antes de iterar"
+                  >
+                    🧪 Evaluar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => setRefining(g.active!)}
                     disabled={busy || refining !== null}
                     title="Conversa con la IA dándole feedback en lenguaje natural para iterar el prompt"
@@ -430,6 +446,15 @@ function PromptsPage() {
               setBusy(false);
             }
           }}
+        />
+      )}
+
+      {evaluating && (
+        <EvalDialog
+          base={evaluating}
+          evalFn={evalFn}
+          samplesFn={samplesFn}
+          onClose={() => setEvaluating(null)}
         />
       )}
 
@@ -655,6 +680,364 @@ function RefineDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function EvalDialog({
+  base,
+  evalFn,
+  samplesFn,
+  onClose,
+}: {
+  base: PromptVersion;
+  evalFn: (input: {
+    data: {
+      prompt_system: string;
+      model: string;
+      temperature?: number;
+      max_tokens?: number;
+      test_cases: EvalTestCase[];
+    };
+  }) => Promise<{
+    ok: boolean;
+    results: EvalResult[];
+    total_tokens: { input: number; output: number };
+    total_duration_ms: number;
+    error?: string;
+  }>;
+  samplesFn: (input: {
+    data: { prompt_type: PromptType; segmento?: Segmento; turn_type: TurnType; limit?: number };
+  }) => Promise<{
+    samples: Array<{
+      pipeline_id: string;
+      lead_name: string | null;
+      lead_email: string | null;
+      segmento: string | null;
+      reply_text: string;
+      suggested_user_message: string;
+    }>;
+  }>;
+  onClose: () => void;
+}) {
+  const [promptSystem, setPromptSystem] = useState(base.prompt_system);
+  const [testCases, setTestCases] = useState<EvalTestCase[]>([
+    { id: crypto.randomUUID(), user_message: "", label: "Test 1" },
+  ]);
+  const [results, setResults] = useState<EvalResult[]>([]);
+  const [running, setRunning] = useState(false);
+  const [loadingSamples, setLoadingSamples] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [tokenSummary, setTokenSummary] = useState<{
+    input: number;
+    output: number;
+    duration_ms: number;
+  } | null>(null);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+
+  const promptChanged = promptSystem !== base.prompt_system;
+
+  function addTestCase() {
+    setTestCases((cs) => [
+      ...cs,
+      { id: crypto.randomUUID(), user_message: "", label: `Test ${cs.length + 1}` },
+    ]);
+  }
+
+  function updateTestCase(id: string, patch: Partial<EvalTestCase>) {
+    setTestCases((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  function removeTestCase(id: string) {
+    setTestCases((cs) => (cs.length === 1 ? cs : cs.filter((c) => c.id !== id)));
+  }
+
+  async function loadSamples(n: number) {
+    setLoadingSamples(true);
+    setErrorMsg(null);
+    try {
+      const res = await samplesFn({
+        data: {
+          prompt_type: base.prompt_type,
+          segmento: base.segmento === "MEGA" ? undefined : base.segmento,
+          turn_type: base.turn_type,
+          limit: n,
+        },
+      });
+      if (!res.samples.length) {
+        setErrorMsg("No hay replies recientes en el pipeline para este segmento.");
+        return;
+      }
+      setTestCases(
+        res.samples.map((s, i) => ({
+          id: crypto.randomUUID(),
+          user_message: s.suggested_user_message,
+          label: `${s.lead_name ?? s.lead_email ?? "lead"} · ${s.segmento ?? "?"} #${i + 1}`,
+        }))
+      );
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Error cargando samples");
+    } finally {
+      setLoadingSamples(false);
+    }
+  }
+
+  async function runAll() {
+    const valid = testCases.filter((tc) => tc.user_message.trim().length > 0);
+    if (valid.length === 0) {
+      setErrorMsg("Añade al menos un test case con user_message no vacío.");
+      return;
+    }
+    setRunning(true);
+    setErrorMsg(null);
+    setResults([]);
+    setTokenSummary(null);
+    try {
+      const res = await evalFn({
+        data: {
+          prompt_system: promptSystem,
+          model: base.model,
+          temperature: base.temperature ?? undefined,
+          max_tokens: base.max_tokens ?? undefined,
+          test_cases: valid,
+        },
+      });
+      if (!res.ok) {
+        setErrorMsg(res.error ?? "Eval falló");
+        return;
+      }
+      setResults(res.results);
+      setTokenSummary({
+        input: res.total_tokens.input,
+        output: res.total_tokens.output,
+        duration_ms: res.total_duration_ms,
+      });
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Error inesperado");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-6xl">
+        <DialogHeader>
+          <DialogTitle>
+            🧪 Evaluar — {TURN_TYPE_LABELS[base.turn_type] ?? base.turn_type} ·{" "}
+            {PROMPT_TYPE_LABELS[base.prompt_type]} · {base.segmento} · {base.version}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Modelo:</span>
+          <code className="rounded bg-muted px-1.5 py-0.5">{base.model}</code>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">temp {base.temperature ?? 0}</span>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">max {base.max_tokens ?? "?"}</span>
+          <span className="text-muted-foreground ml-3">Auto-cargar samples reales:</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => loadSamples(3)}
+            disabled={loadingSamples || running}
+          >
+            3
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => loadSamples(5)}
+            disabled={loadingSamples || running}
+          >
+            5
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => loadSamples(10)}
+            disabled={loadingSamples || running}
+          >
+            10
+          </Button>
+          {loadingSamples && <span className="text-muted-foreground italic">Cargando...</span>}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowPromptEditor((v) => !v)}
+            className="ml-auto"
+          >
+            {showPromptEditor ? "Ocultar" : "Editar"} prompt {promptChanged && "✏️"}
+          </Button>
+        </div>
+
+        {showPromptEditor && (
+          <div className="space-y-1">
+            <Label className="text-xs">Prompt system (cambios solo se aplican a esta evaluación)</Label>
+            <Textarea
+              value={promptSystem}
+              onChange={(e) => setPromptSystem(e.target.value)}
+              className="min-h-[160px] font-mono text-[11px]"
+              spellCheck={false}
+            />
+            {promptChanged && (
+              <button
+                type="button"
+                onClick={() => setPromptSystem(base.prompt_system)}
+                className="text-[11px] underline text-muted-foreground"
+              >
+                ↺ Restaurar prompt original
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 h-[480px]">
+          <div className="flex flex-col h-full min-h-0 rounded-md border bg-muted/10">
+            <div className="flex items-center justify-between border-b px-3 py-2">
+              <h3 className="text-xs font-semibold uppercase text-muted-foreground">
+                Test cases ({testCases.length})
+              </h3>
+              <Button size="sm" variant="ghost" onClick={addTestCase} disabled={running}>
+                + Añadir
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {testCases.map((tc, i) => (
+                <div key={tc.id} className="rounded border bg-card p-2 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <Input
+                      value={tc.label ?? ""}
+                      onChange={(e) => updateTestCase(tc.id, { label: e.target.value })}
+                      placeholder={`Test ${i + 1}`}
+                      className="h-7 text-xs flex-1"
+                      disabled={running}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeTestCase(tc.id)}
+                      disabled={running || testCases.length === 1}
+                      className="text-xs text-muted-foreground hover:text-red-600 disabled:opacity-30"
+                      title="Eliminar test case"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <Textarea
+                    value={tc.user_message}
+                    onChange={(e) => updateTestCase(tc.id, { user_message: e.target.value })}
+                    placeholder="User message que recibirá el prompt..."
+                    className="min-h-[80px] text-[11px] font-mono"
+                    spellCheck={false}
+                    disabled={running}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col h-full min-h-0 rounded-md border bg-muted/10">
+            <div className="flex items-center justify-between border-b px-3 py-2">
+              <h3 className="text-xs font-semibold uppercase text-muted-foreground">
+                Resultados ({results.length})
+              </h3>
+              {tokenSummary && (
+                <span className="text-[10px] text-muted-foreground">
+                  {tokenSummary.input + tokenSummary.output} tokens · {tokenSummary.duration_ms}ms
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {results.length === 0 && !running && (
+                <p className="text-xs text-muted-foreground italic text-center py-8">
+                  Click "Run all" para ejecutar el prompt contra todos los test cases.
+                  Los resultados aparecerán aquí.
+                </p>
+              )}
+              {running && (
+                <p className="text-xs text-muted-foreground italic text-center py-8">
+                  Ejecutando {testCases.filter((tc) => tc.user_message.trim()).length} test cases
+                  en paralelo...
+                </p>
+              )}
+              {results.map((r) => (
+                <EvalResultCard key={r.test_case_id} result={r} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {errorMsg && (
+          <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+            {errorMsg}
+          </div>
+        )}
+
+        <DialogFooter>
+          <div className="flex w-full items-center justify-between">
+            <span className="text-[11px] text-muted-foreground">
+              Eval no guarda nada ni modifica el prompt activo. Solo prueba.
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose} disabled={running}>
+                Cerrar
+              </Button>
+              <Button onClick={runAll} disabled={running}>
+                {running ? "Ejecutando..." : `▶ Run all (${testCases.filter((tc) => tc.user_message.trim()).length})`}
+              </Button>
+            </div>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EvalResultCard({ result }: { result: EvalResult }) {
+  const [showInput, setShowInput] = useState(false);
+  const hasError = !!result.output_error;
+  return (
+    <div
+      className={cn(
+        "rounded border p-2 space-y-1 text-[11px]",
+        hasError ? "border-red-300 bg-red-50/50 dark:bg-red-950/20" : "bg-card"
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold truncate" title={result.test_case_label}>
+          {result.test_case_label ?? result.test_case_id.slice(0, 8)}
+        </span>
+        <span className="text-[10px] text-muted-foreground shrink-0">
+          {result.duration_ms}ms
+          {result.tokens && ` · ${result.tokens.input}+${result.tokens.output} tok`}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => setShowInput((v) => !v)}
+        className="text-[10px] underline text-muted-foreground"
+      >
+        {showInput ? "Ocultar input" : "Ver input"}
+      </button>
+      {showInput && (
+        <pre className="rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-32 overflow-y-auto">
+          {result.test_case_input}
+        </pre>
+      )}
+      {hasError ? (
+        <pre className="rounded bg-red-100/60 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug text-red-800 dark:bg-red-950/40 dark:text-red-300">
+          {result.output_error}
+        </pre>
+      ) : result.output_parsed ? (
+        <pre className="rounded bg-emerald-50/60 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto dark:bg-emerald-950/20">
+          {JSON.stringify(result.output_parsed, null, 2)}
+        </pre>
+      ) : (
+        <pre className="rounded bg-muted/40 p-1.5 text-[10px] font-mono whitespace-pre-wrap leading-snug max-h-64 overflow-y-auto">
+          {result.output_raw}
+        </pre>
+      )}
+    </div>
   );
 }
 
