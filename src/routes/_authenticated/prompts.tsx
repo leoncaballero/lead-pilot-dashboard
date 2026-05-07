@@ -19,6 +19,7 @@ import {
   createPromptVersion,
   activatePromptVersion,
   suggestPromptImprovements,
+  refinePromptWithFeedback,
   PROMPT_TYPE_VALUES,
   SEGMENTO_VALUES,
   TURN_TYPE_VALUES,
@@ -29,6 +30,7 @@ import {
   type Segmento,
   type TurnType,
   type SuggestPromptResponse,
+  type ConversationTurn,
 } from "@/api/prompts.functions";
 
 const TURN_TYPE_LABELS: Record<TurnType, string> = {
@@ -92,9 +94,11 @@ function PromptsPage() {
   const [suggesting, setSuggesting] = useState<PromptVersion | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestPromptResponse | null>(null);
   const [creatingNew, setCreatingNew] = useState(false);
+  const [refining, setRefining] = useState<PromptVersion | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const suggestFn = useServerFn(suggestPromptImprovements);
+  const refineFn = useServerFn(refinePromptWithFeedback);
 
   // Combos existentes — usado por el dialog de crear nuevo para mostrar duplicados
   const existingCombos = useMemo(() => {
@@ -269,11 +273,20 @@ function PromptsPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => setRefining(g.active!)}
+                    disabled={busy || refining !== null}
+                    title="Conversa con la IA dándole feedback en lenguaje natural para iterar el prompt"
+                  >
+                    💬 Refinar con feedback
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => handleSuggest(g.active!)}
                     disabled={busy || suggesting !== null}
                     title="Analiza ediciones y rechazos humanos recientes y propone una v2 del prompt"
                   >
-                    🤖 Sugerir mejoras
+                    🤖 Sugerir auto
                   </Button>
                   <Button
                     size="sm"
@@ -281,7 +294,7 @@ function PromptsPage() {
                     onClick={() => setEditing(g.active!)}
                     disabled={busy}
                   >
-                    Editar / nueva versión
+                    Editar
                   </Button>
                 </div>
               )}
@@ -387,6 +400,38 @@ function PromptsPage() {
         />
       )}
 
+      {refining && (
+        <RefineDialog
+          base={refining}
+          refineFn={refineFn}
+          onClose={() => setRefining(null)}
+          onSave={async (newPrompt: string, summary: string) => {
+            setBusy(true);
+            try {
+              await createFn({
+                data: {
+                  prompt_type: refining.prompt_type,
+                  segmento: refining.segmento,
+                  turn_type: refining.turn_type,
+                  prompt_system: newPrompt,
+                  model: refining.model,
+                  temperature: refining.temperature ?? 0,
+                  max_tokens: refining.max_tokens ?? 2048,
+                  description: "Refinado conversacionalmente · " + summary.slice(0, 120),
+                  setActive: true,
+                },
+              });
+              setRefining(null);
+              await router.invalidate();
+            } catch (e) {
+              setErrorMsg(e instanceof Error ? e.message : "Error guardando");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+
       {creatingNew && (
         <CreateNewDialog
           existingCombos={existingCombos}
@@ -397,6 +442,218 @@ function PromptsPage() {
         />
       )}
     </div>
+  );
+}
+
+function RefineDialog({
+  base,
+  refineFn,
+  onClose,
+  onSave,
+}: {
+  base: PromptVersion;
+  refineFn: (input: { data: {
+    current_prompt: string;
+    prompt_type: PromptType;
+    segmento: Segmento;
+    turn_type: TurnType;
+    history: ConversationTurn[];
+    user_message: string;
+  } }) => Promise<{ ok: boolean; refined_prompt?: string; assistant_message?: string; unchanged?: boolean; error?: string; cost_tokens?: { input: number; output: number } }>;
+  onClose: () => void;
+  onSave: (newPrompt: string, summary: string) => Promise<void>;
+}) {
+  const [currentPrompt, setCurrentPrompt] = useState(base.prompt_system);
+  const [history, setHistory] = useState<ConversationTurn[]>([]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showCurrentPrompt, setShowCurrentPrompt] = useState(false);
+
+  async function handleSend() {
+    if (!input.trim()) return;
+    const userMsg: ConversationTurn = { role: "user", content: input.trim() };
+    setHistory((h) => [...h, userMsg]);
+    setInput("");
+    setThinking(true);
+    setErrorMsg(null);
+    try {
+      const res = await refineFn({
+        data: {
+          current_prompt: currentPrompt,
+          prompt_type: base.prompt_type,
+          segmento: base.segmento,
+          turn_type: base.turn_type,
+          history,
+          user_message: userMsg.content,
+        },
+      });
+      if (!res.ok) {
+        setErrorMsg(res.error ?? "Error desconocido");
+        // Quitar el último user msg al fallar para que pueda reintentar
+        setHistory((h) => h.slice(0, -1));
+        setInput(userMsg.content);
+        return;
+      }
+      const assistantMsg: ConversationTurn = {
+        role: "assistant",
+        content: res.assistant_message ?? "(sin mensaje)",
+      };
+      setHistory((h) => [...h, assistantMsg]);
+      if (res.refined_prompt && !res.unchanged) {
+        setCurrentPrompt(res.refined_prompt);
+      }
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Error inesperado");
+      setHistory((h) => h.slice(0, -1));
+      setInput(userMsg.content);
+    } finally {
+      setThinking(false);
+    }
+  }
+
+  function handleKeyDown(e: import("react").KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  const promptChanged = currentPrompt !== base.prompt_system;
+  const lastAssistant = [...history].reverse().find((t) => t.role === "assistant");
+  const summaryForSave = lastAssistant?.content ?? "Refinado vía conversación";
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>
+            💬 Refinar con feedback — {TURN_TYPE_LABELS[base.turn_type] ?? base.turn_type} · {PROMPT_TYPE_LABELS[base.prompt_type]} · {base.segmento} · {base.version}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-4 h-[500px]">
+          {/* Izquierda: chat */}
+          <div className="flex flex-col h-full min-h-0 rounded-md border bg-muted/20">
+            <div className="flex-1 overflow-y-auto p-3 space-y-3 text-sm">
+              {history.length === 0 && !thinking && (
+                <p className="text-xs text-muted-foreground italic text-center py-8">
+                  Escribe feedback en lenguaje natural sobre cómo quieres que cambie
+                  el prompt. Ej: "el Turn 1 está muy formal, quiero más cercano",
+                  "no menciones llamada de 15 min, ofrece info por email primero",
+                  "añade ejemplo de respuesta a Genesis".
+                </p>
+              )}
+              {history.map((t, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "rounded-md px-3 py-2 text-sm whitespace-pre-wrap",
+                    t.role === "user"
+                      ? "bg-blue-100/60 ml-6 dark:bg-blue-950/30"
+                      : "bg-emerald-100/60 mr-6 dark:bg-emerald-950/30"
+                  )}
+                >
+                  <div className="text-[10px] font-semibold uppercase mb-1 opacity-70">
+                    {t.role === "user" ? "Tú" : "Claude"}
+                  </div>
+                  {t.content}
+                </div>
+              ))}
+              {thinking && (
+                <div className="rounded-md bg-emerald-100/40 px-3 py-2 mr-6 text-sm italic text-muted-foreground dark:bg-emerald-950/20">
+                  Claude pensando...
+                </div>
+              )}
+              {errorMsg && (
+                <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {errorMsg}
+                </div>
+              )}
+            </div>
+            <div className="border-t p-2 space-y-1">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Tu feedback..."
+                className="min-h-[60px] text-sm"
+                disabled={thinking}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-muted-foreground">
+                  <kbd className="rounded border bg-background px-1">⌘ Enter</kbd> para enviar
+                </span>
+                <Button size="sm" onClick={handleSend} disabled={thinking || !input.trim()}>
+                  Enviar
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Derecha: prompt actual con cambios */}
+          <div className="flex flex-col h-full min-h-0">
+            <div className="mb-1 flex items-center justify-between">
+              <h4 className="text-xs font-medium uppercase text-muted-foreground">
+                {promptChanged ? (
+                  <span className="text-emerald-700 dark:text-emerald-400">
+                    Prompt actualizado · {currentPrompt.length} chars
+                    {currentPrompt.length !== base.prompt_system.length && (
+                      <span className="ml-1">
+                        ({currentPrompt.length > base.prompt_system.length ? "+" : ""}
+                        {currentPrompt.length - base.prompt_system.length})
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <>Prompt actual ({currentPrompt.length} chars)</>
+                )}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowCurrentPrompt((v) => !v)}
+                className="text-[10px] underline text-muted-foreground hover:text-foreground"
+              >
+                {showCurrentPrompt ? "Ocultar" : "Ver completo"}
+              </button>
+            </div>
+            <pre
+              className={cn(
+                "flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border p-3 font-mono text-[11px] leading-relaxed",
+                promptChanged
+                  ? "border-emerald-300 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/10"
+                  : "bg-muted/40"
+              )}
+            >
+              {showCurrentPrompt
+                ? currentPrompt
+                : currentPrompt.slice(0, 1500) +
+                  (currentPrompt.length > 1500 ? "\n\n...(usa 'Ver completo' para ver todo)" : "")}
+            </pre>
+          </div>
+        </div>
+
+        <DialogFooter className="items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">
+            {promptChanged
+              ? "El prompt ha cambiado en esta conversación. Al guardar se crea v" +
+                nextMinor(base.version) +
+                " y se activa."
+              : "Aún no hay cambios. Itera con feedback hasta que estés satisfecho."}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cerrar sin guardar
+            </Button>
+            {promptChanged && (
+              <Button onClick={() => onSave(currentPrompt, summaryForSave)}>
+                Guardar y activar v{nextMinor(base.version)}
+              </Button>
+            )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
