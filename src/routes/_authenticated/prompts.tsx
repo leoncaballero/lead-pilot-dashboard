@@ -733,6 +733,9 @@ function EvalDialog({
     duration_ms: number;
   } | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [sampleSegmento, setSampleSegmento] = useState<Segmento | undefined>(
+    base.segmento === "MEGA" ? undefined : base.segmento
+  );
 
   const promptChanged = promptSystem !== base.prompt_system;
 
@@ -758,13 +761,15 @@ function EvalDialog({
       const res = await samplesFn({
         data: {
           prompt_type: base.prompt_type,
-          segmento: base.segmento === "MEGA" ? undefined : base.segmento,
+          segmento: sampleSegmento,
           turn_type: base.turn_type,
           limit: n,
         },
       });
       if (!res.samples.length) {
-        setErrorMsg("No hay replies recientes en el pipeline para este segmento.");
+        setErrorMsg(
+          `No hay replies recientes en el pipeline para segmento ${sampleSegmento ?? "(cualquiera)"}.`
+        );
         return;
       }
       setTestCases(
@@ -835,7 +840,27 @@ function EvalDialog({
           <span className="text-muted-foreground">temp {base.temperature ?? 0}</span>
           <span className="text-muted-foreground">·</span>
           <span className="text-muted-foreground">max {base.max_tokens ?? "?"}</span>
-          <span className="text-muted-foreground ml-3">Auto-cargar samples reales:</span>
+          <span className="text-muted-foreground ml-3">Samples reales del segmento:</span>
+          <select
+            value={sampleSegmento ?? ""}
+            onChange={(e) =>
+              setSampleSegmento((e.target.value || undefined) as Segmento | undefined)
+            }
+            disabled={loadingSamples || running}
+            className="h-7 rounded border bg-background px-1.5 text-xs"
+            title={
+              base.segmento === "MEGA"
+                ? "MEGA es fallback — elige qué segmento real probar"
+                : "El segmento del prompt"
+            }
+          >
+            {base.segmento === "MEGA" && <option value="">cualquiera</option>}
+            {SEGMENTO_VALUES.filter((s) => s !== "MEGA").map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
           <Button
             size="sm"
             variant="outline"
