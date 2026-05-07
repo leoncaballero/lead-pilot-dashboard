@@ -18,10 +18,12 @@ import {
   listPrompts,
   createPromptVersion,
   activatePromptVersion,
+  suggestPromptImprovements,
   type PromptVersion,
   type PromptType,
   type Segmento,
   type TurnType,
+  type SuggestPromptResponse,
 } from "@/api/prompts.functions";
 
 const TURN_TYPE_LABELS: Record<TurnType, string> = {
@@ -77,8 +79,11 @@ function PromptsPage() {
 
   const [editing, setEditing] = useState<PromptVersion | null>(null);
   const [viewing, setViewing] = useState<PromptVersion | null>(null);
+  const [suggesting, setSuggesting] = useState<PromptVersion | null>(null);
+  const [suggestion, setSuggestion] = useState<SuggestPromptResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const suggestFn = useServerFn(suggestPromptImprovements);
 
   // Agrupar por (turn_type, prompt_type, segmento) y separar activas vs versiones anteriores
   const groups = useMemo(() => groupPrompts(initial.prompts), [initial.prompts]);
@@ -127,6 +132,54 @@ function PromptsPage() {
     }
   }
 
+  async function handleSuggest(active: PromptVersion) {
+    setSuggesting(active);
+    setSuggestion(null);
+    setErrorMsg(null);
+    try {
+      const res = await suggestFn({
+        data: {
+          prompt_type: active.prompt_type,
+          segmento: active.segmento,
+          turn_type: active.turn_type,
+        },
+      });
+      setSuggestion(res);
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Error sugiriendo");
+      setSuggesting(null);
+    }
+  }
+
+  async function handleAcceptSuggestion(active: PromptVersion) {
+    if (!suggestion?.suggested_prompt) return;
+    setBusy(true);
+    try {
+      await createFn({
+        data: {
+          prompt_type: active.prompt_type,
+          segmento: active.segmento,
+          turn_type: active.turn_type,
+          prompt_system: suggestion.suggested_prompt,
+          model: active.model,
+          temperature: active.temperature ?? 0,
+          max_tokens: active.max_tokens ?? 2048,
+          description:
+            "IA-suggested · " +
+            (suggestion.summary?.slice(0, 120) ?? "ajustes basados en feedback humano"),
+          setActive: true,
+        },
+      });
+      setSuggesting(null);
+      setSuggestion(null);
+      await router.invalidate();
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Error guardando sugerencia");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -163,14 +216,25 @@ function PromptsPage() {
                 </Badge>
               </div>
               {g.active && (
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={() => setEditing(g.active!)}
-                  disabled={busy}
-                >
-                  Editar / nueva versión
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSuggest(g.active!)}
+                    disabled={busy || suggesting !== null}
+                    title="Analiza ediciones y rechazos humanos recientes y propone una v2 del prompt"
+                  >
+                    🤖 Sugerir mejoras
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => setEditing(g.active!)}
+                    disabled={busy}
+                  >
+                    Editar / nueva versión
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -260,8 +324,152 @@ function PromptsPage() {
           busy={busy}
         />
       )}
+
+      {suggesting && (
+        <SuggestionDialog
+          base={suggesting}
+          suggestion={suggestion}
+          onClose={() => {
+            setSuggesting(null);
+            setSuggestion(null);
+          }}
+          onAccept={() => handleAcceptSuggestion(suggesting)}
+          busy={busy}
+        />
+      )}
     </div>
   );
+}
+
+function SuggestionDialog({
+  base,
+  suggestion,
+  onClose,
+  onAccept,
+  busy,
+}: {
+  base: PromptVersion;
+  suggestion: SuggestPromptResponse | null;
+  onClose: () => void;
+  onAccept: () => void;
+  busy: boolean;
+}) {
+  const loading = !suggestion;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>
+            🤖 Sugerencia IA — {TURN_TYPE_LABELS[base.turn_type]} · {PROMPT_TYPE_LABELS[base.prompt_type]} · {base.segmento}
+          </DialogTitle>
+        </DialogHeader>
+
+        {loading && (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            Analizando ediciones y rechazos humanos recientes con Opus...
+            <div className="text-xs mt-2">Suele tardar 15-30 segundos.</div>
+          </div>
+        )}
+
+        {!loading && suggestion && !suggestion.ok && (
+          <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+            {suggestion.error ?? "Error desconocido"}
+          </div>
+        )}
+
+        {!loading && suggestion && suggestion.ok && (
+          <div className="space-y-4">
+            <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                <span>
+                  Analizados:{" "}
+                  <span className="font-medium text-foreground">
+                    {suggestion.num_edits_analyzed} edits
+                  </span>{" "}
+                  ·{" "}
+                  <span className="font-medium text-foreground">
+                    {suggestion.num_rejects_analyzed} rejects
+                  </span>
+                </span>
+                {suggestion.cost_tokens && (
+                  <span>
+                    · {suggestion.cost_tokens.input + suggestion.cost_tokens.output} tokens
+                  </span>
+                )}
+              </div>
+              {suggestion.summary && (
+                <p className="text-sm font-medium">{suggestion.summary}</p>
+              )}
+              {suggestion.patterns_detected && suggestion.patterns_detected.length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">
+                    Patrones detectados
+                  </h4>
+                  <ul className="list-disc pl-5 text-xs space-y-0.5">
+                    {suggestion.patterns_detected.map((p, i) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {suggestion.patterns_detected && suggestion.patterns_detected.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">
+                  No se detectaron patrones suficientemente claros — sugerencia idéntica al actual.
+                </p>
+              )}
+            </div>
+
+            {suggestion.suggested_prompt &&
+              suggestion.suggested_prompt !== suggestion.current_prompt && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <h4 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                      Actual ({base.version}) — {(suggestion.current_prompt ?? "").length} chars
+                    </h4>
+                    <pre className="h-[400px] overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
+                      {suggestion.current_prompt}
+                    </pre>
+                  </div>
+                  <div>
+                    <h4 className="mb-1 text-xs font-medium uppercase text-emerald-700 dark:text-emerald-400">
+                      Propuesta IA — {(suggestion.suggested_prompt ?? "").length} chars
+                    </h4>
+                    <pre className="h-[400px] overflow-y-auto whitespace-pre-wrap rounded-md border border-emerald-300 bg-emerald-50/40 p-3 font-mono text-[11px] leading-relaxed dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                      {suggestion.suggested_prompt}
+                    </pre>
+                  </div>
+                </div>
+              )}
+          </div>
+        )}
+
+        <DialogFooter className="items-center justify-between gap-2">
+          <span className="text-[10px] text-muted-foreground">
+            Aceptar guarda como v{nextMinor(base.version)} y la activa.
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={busy}>
+              {loading ? "Cancelar" : "Cerrar"}
+            </Button>
+            {!loading &&
+              suggestion?.ok &&
+              suggestion.suggested_prompt &&
+              suggestion.suggested_prompt !== suggestion.current_prompt && (
+                <Button onClick={onAccept} disabled={busy}>
+                  {busy ? "Guardando..." : "Aceptar y activar"}
+                </Button>
+              )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function nextMinor(version: string): string {
+  const m = /^v(\d+)\.(\d+)$/.exec(version);
+  if (!m) return "vN+1";
+  return `v${m[1]}.${Number(m[2]) + 1}`;
 }
 
 function EditDialog({

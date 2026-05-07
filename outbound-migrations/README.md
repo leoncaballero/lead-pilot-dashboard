@@ -47,3 +47,7 @@ Settings → Project → Secrets:
   companies, engagements/meetings, engagements/calls — todos read). Usado por la
   tarjeta "Contexto HubSpot" en Triage y History detail. Sin él, la tarjeta
   muestra un error pero el resto sigue funcionando.
+- `ANTHROPIC_API_KEY` — API key de Anthropic. Usada por el botón "Sugerir
+  mejoras" en `/prompts` (analiza edits + rejects con Opus y propone v2 del
+  prompt). Sin él, el botón devuelve error pero el resto de la app funciona.
+  Reusable la misma que está en n8n credentials.
