@@ -610,6 +610,11 @@ function PromptsPage() {
   const [suggesting, setSuggesting] = useState<PromptVersion | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestPromptResponse | null>(null);
   const [creatingNew, setCreatingNew] = useState(false);
+  const [createPrefill, setCreatePrefill] = useState<{
+    prompt_type: PromptType;
+    segmento: Segmento;
+    turn_type: TurnType;
+  } | null>(null);
   const [refining, setRefining] = useState<PromptVersion | null>(null);
   const [evaluating, setEvaluating] = useState<PromptVersion | null>(null);
   const [busy, setBusy] = useState(false);
@@ -812,7 +817,13 @@ function PromptsPage() {
             opcionalmente la activa. Los workflows leen la versión activa en cada generación.
           </p>
         </div>
-        <Button onClick={() => setCreatingNew(true)} disabled={busy}>
+        <Button
+          onClick={() => {
+            setCreatePrefill(null);
+            setCreatingNew(true);
+          }}
+          disabled={busy}
+        >
           + Crear prompt nuevo
         </Button>
       </div>
@@ -876,10 +887,12 @@ function PromptsPage() {
             selected={selectedCell}
             onSelect={(cell) => setSelectedCell(cell)}
             onCreate={(seg, type) => {
+              setCreatePrefill({
+                prompt_type: type,
+                segmento: seg,
+                turn_type: selectedTurn,
+              });
               setCreatingNew(true);
-              // Pre-seleccionado pero no implementamos prefill; usuario rellena manual
-              void seg;
-              void type;
             }}
           />
 
@@ -902,7 +915,10 @@ function PromptsPage() {
           ) : selectedCell ? (
             <EmptyCellPanel
               cell={selectedCell}
-              onCreate={() => setCreatingNew(true)}
+              onCreate={() => {
+                setCreatePrefill(selectedCell);
+                setCreatingNew(true);
+              }}
               onClose={() => setSelectedCell(null)}
             />
           ) : (
@@ -997,7 +1013,11 @@ function PromptsPage() {
         <CreateNewDialog
           existingCombos={existingCombos}
           existingPrompts={initial.prompts}
-          onClose={() => setCreatingNew(false)}
+          prefill={createPrefill ?? undefined}
+          onClose={() => {
+            setCreatingNew(false);
+            setCreatePrefill(null);
+          }}
           onSave={handleCreateNew}
           busy={busy}
         />
@@ -1754,12 +1774,14 @@ function EvalResultCard({
 function CreateNewDialog({
   existingCombos,
   existingPrompts,
+  prefill,
   onClose,
   onSave,
   busy,
 }: {
   existingCombos: Set<string>;
   existingPrompts: PromptVersion[];
+  prefill?: { prompt_type: PromptType; segmento: Segmento; turn_type: TurnType };
   onClose: () => void;
   onSave: (input: {
     prompt_type: PromptType;
@@ -1774,16 +1796,47 @@ function CreateNewDialog({
   }) => Promise<void>;
   busy: boolean;
 }) {
-  const [promptType, setPromptType] = useState<PromptType>("generator");
-  const [segmento, setSegmento] = useState<Segmento>("Genesis");
-  const [turnType, setTurnType] = useState<TurnType>("turn1");
+  const initialPromptType = prefill?.prompt_type ?? "generator";
+  const initialSegmento = prefill?.segmento ?? "Genesis";
+  const initialTurnType = prefill?.turn_type ?? "turn1";
+
+  const [promptType, setPromptType] = useState<PromptType>(initialPromptType);
+  const [segmento, setSegmento] = useState<Segmento>(initialSegmento);
+  const [turnType, setTurnType] = useState<TurnType>(initialTurnType);
   const [text, setText] = useState("");
   const [description, setDescription] = useState("");
-  const [model, setModel] = useState<string>(DEFAULT_MODELS_BY_PROMPT_TYPE.generator);
+  const [model, setModel] = useState<string>(DEFAULT_MODELS_BY_PROMPT_TYPE[initialPromptType]);
   const [temperature, setTemperature] = useState<string>("0");
-  const [maxTokens, setMaxTokens] = useState<string>(String(DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE.generator));
+  const [maxTokens, setMaxTokens] = useState<string>(
+    String(DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE[initialPromptType])
+  );
   const [setActive, setSetActive] = useState(true);
   const [copyFrom, setCopyFrom] = useState<string>("");
+
+  // Si vino un prefill y existe un prompt activo en esa misma combinación
+  // pero de otro segmento (típicamente MEGA), preseleccionarlo como "Copiar de…"
+  // para que el usuario sólo tenga que retocar.
+  useEffect(() => {
+    if (!prefill || copyFrom) return;
+    const candidate = existingPrompts.find(
+      (p) =>
+        p.is_active &&
+        p.prompt_type === prefill.prompt_type &&
+        p.turn_type === prefill.turn_type &&
+        p.segmento !== prefill.segmento
+    );
+    if (candidate) {
+      setCopyFrom(candidate.id);
+      setText(candidate.prompt_system);
+      setModel(candidate.model);
+      setTemperature(String(candidate.temperature ?? 0));
+      setMaxTokens(
+        String(candidate.max_tokens ?? DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE[prefill.prompt_type])
+      );
+      setDescription(`Copiado de ${candidate.segmento} ${candidate.version}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isDuplicate = existingCombos.has(`${promptType}|${segmento}|${turnType}`);
 
@@ -1821,7 +1874,15 @@ function CreateNewDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>+ Crear prompt nuevo</DialogTitle>
+          <DialogTitle>
+            + Crear prompt nuevo
+            {prefill && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                — {TURN_TYPE_LABELS[prefill.turn_type]} ·{" "}
+                {PROMPT_TYPE_LABELS[prefill.prompt_type]} · {prefill.segmento}
+              </span>
+            )}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-3">
