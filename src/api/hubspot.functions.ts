@@ -69,7 +69,7 @@ export type HubSpotLeadContext = {
   error?: string;
 };
 
-const HS_BASE = "https://api.hubapi.com";
+const HS_BASE = "https://connector-gateway.lovable.dev/hubspot";
 
 const CONTACT_PROPS = [
   "email",
