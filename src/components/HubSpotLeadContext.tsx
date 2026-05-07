@@ -82,6 +82,11 @@ export function HubSpotLeadContextCard({
 
   const { contact, company, lastMeeting, upcomingMeeting, recentCalls } = data;
 
+  // Portal id de HubSpot Consultoria.io EU1 — usado en links directos a la ficha
+  const HS_PORTAL_ID = "144169719";
+  const recordId = contact?.id ?? String(hubspotContactId);
+  const hubspotUrl = `https://app-eu1.hubspot.com/contacts/${HS_PORTAL_ID}/contact/${recordId}`;
+
   return (
     <div className="rounded-md border bg-card p-3 text-xs space-y-2.5">
       <div className="flex items-center justify-between">
@@ -89,14 +94,12 @@ export function HubSpotLeadContextCard({
           Contexto HubSpot
         </h4>
         <a
-          href={`https://app-eu1.hubspot.com/contacts/${
-            contact?.id ? "" : ""
-          }contact/${contact?.id ?? hubspotContactId}`}
+          href={hubspotUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[10px] text-muted-foreground underline hover:text-foreground"
         >
-          Abrir en HubSpot ↗
+          Abrir ficha en HubSpot ↗
         </a>
       </div>
 
