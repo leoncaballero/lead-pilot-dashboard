@@ -19,6 +19,11 @@ import {
   createPromptVersion,
   activatePromptVersion,
   suggestPromptImprovements,
+  PROMPT_TYPE_VALUES,
+  SEGMENTO_VALUES,
+  TURN_TYPE_VALUES,
+  DEFAULT_MODELS_BY_PROMPT_TYPE,
+  DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE,
   type PromptVersion,
   type PromptType,
   type Segmento,
@@ -29,7 +34,12 @@ import {
 const TURN_TYPE_LABELS: Record<TurnType, string> = {
   turn1: "Turn 1",
   turn2_generic: "Turn 2",
+  turn3_generic: "Turn 3",
   follow_up_4h: "FU 4h",
+  follow_up_24h: "FU 24h",
+  follow_up_3d: "FU 3d",
+  objection_response: "Objeción",
+  booking_propose: "Propuesta hora",
 };
 
 const PROMPT_TYPE_LABELS: Record<PromptType, string> = {
@@ -81,9 +91,43 @@ function PromptsPage() {
   const [viewing, setViewing] = useState<PromptVersion | null>(null);
   const [suggesting, setSuggesting] = useState<PromptVersion | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestPromptResponse | null>(null);
+  const [creatingNew, setCreatingNew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const suggestFn = useServerFn(suggestPromptImprovements);
+
+  // Combos existentes — usado por el dialog de crear nuevo para mostrar duplicados
+  const existingCombos = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of initial.prompts) {
+      set.add(`${p.prompt_type}|${p.segmento}|${p.turn_type}`);
+    }
+    return set;
+  }, [initial.prompts]);
+
+  async function handleCreateNew(input: {
+    prompt_type: PromptType;
+    segmento: Segmento;
+    turn_type: TurnType;
+    prompt_system: string;
+    description?: string;
+    model?: string;
+    temperature?: number;
+    max_tokens?: number;
+    setActive: boolean;
+  }) {
+    setBusy(true);
+    setErrorMsg(null);
+    try {
+      await createFn({ data: input });
+      setCreatingNew(false);
+      await router.invalidate();
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Error creando prompt");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Agrupar por (turn_type, prompt_type, segmento) y separar activas vs versiones anteriores
   const groups = useMemo(() => groupPrompts(initial.prompts), [initial.prompts]);
@@ -182,12 +226,17 @@ function PromptsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Prompts</h1>
-        <p className="text-sm text-muted-foreground">
-          Versiones activas y previas. Cada edición guarda una versión nueva (v1.0 → v1.1 → ...) y
-          opcionalmente la activa. Los workflows leen la versión activa en cada generación.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Prompts</h1>
+          <p className="text-sm text-muted-foreground">
+            Versiones activas y previas. Cada edición guarda una versión nueva (v1.0 → v1.1 → ...) y
+            opcionalmente la activa. Los workflows leen la versión activa en cada generación.
+          </p>
+        </div>
+        <Button onClick={() => setCreatingNew(true)} disabled={busy}>
+          + Crear prompt nuevo
+        </Button>
       </div>
 
       {errorMsg && (
@@ -337,7 +386,273 @@ function PromptsPage() {
           busy={busy}
         />
       )}
+
+      {creatingNew && (
+        <CreateNewDialog
+          existingCombos={existingCombos}
+          existingPrompts={initial.prompts}
+          onClose={() => setCreatingNew(false)}
+          onSave={handleCreateNew}
+          busy={busy}
+        />
+      )}
     </div>
+  );
+}
+
+function CreateNewDialog({
+  existingCombos,
+  existingPrompts,
+  onClose,
+  onSave,
+  busy,
+}: {
+  existingCombos: Set<string>;
+  existingPrompts: PromptVersion[];
+  onClose: () => void;
+  onSave: (input: {
+    prompt_type: PromptType;
+    segmento: Segmento;
+    turn_type: TurnType;
+    prompt_system: string;
+    description?: string;
+    model?: string;
+    temperature?: number;
+    max_tokens?: number;
+    setActive: boolean;
+  }) => Promise<void>;
+  busy: boolean;
+}) {
+  const [promptType, setPromptType] = useState<PromptType>("generator");
+  const [segmento, setSegmento] = useState<Segmento>("Genesis");
+  const [turnType, setTurnType] = useState<TurnType>("turn1");
+  const [text, setText] = useState("");
+  const [description, setDescription] = useState("");
+  const [model, setModel] = useState<string>(DEFAULT_MODELS_BY_PROMPT_TYPE.generator);
+  const [temperature, setTemperature] = useState<string>("0");
+  const [maxTokens, setMaxTokens] = useState<string>(String(DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE.generator));
+  const [setActive, setSetActive] = useState(true);
+  const [copyFrom, setCopyFrom] = useState<string>("");
+
+  const isDuplicate = existingCombos.has(`${promptType}|${segmento}|${turnType}`);
+
+  // Cuando el user cambia prompt_type, ajustar defaults de model + max_tokens
+  function handlePromptTypeChange(t: PromptType) {
+    setPromptType(t);
+    setModel(DEFAULT_MODELS_BY_PROMPT_TYPE[t]);
+    setMaxTokens(String(DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE[t]));
+    if (t === "validator") setTemperature("0");
+  }
+
+  function handleCopyFrom(id: string) {
+    setCopyFrom(id);
+    if (!id) return;
+    const src = existingPrompts.find((p) => p.id === id);
+    if (src) {
+      setText(src.prompt_system);
+      setModel(src.model);
+      setTemperature(String(src.temperature ?? 0));
+      setMaxTokens(String(src.max_tokens ?? DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE[promptType]));
+    }
+  }
+
+  // Sugerir prompts para copiar: misma combinación pero otro segmento (ej. MEGA → Genesis)
+  const copyCandidates = existingPrompts.filter(
+    (p) =>
+      p.prompt_type === promptType &&
+      p.turn_type === turnType &&
+      p.segmento !== segmento
+  );
+
+  const canSave = text.trim().length > 0 && !isDuplicate;
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>+ Crear prompt nuevo</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label htmlFor="ptype">Tipo de prompt</Label>
+              <select
+                id="ptype"
+                value={promptType}
+                onChange={(e) => handlePromptTypeChange(e.target.value as PromptType)}
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                {PROMPT_TYPE_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="seg">Segmento</Label>
+              <select
+                id="seg"
+                value={segmento}
+                onChange={(e) => setSegmento(e.target.value as Segmento)}
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                {SEGMENTO_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="tt">Turn type</Label>
+              <select
+                id="tt"
+                value={turnType}
+                onChange={(e) => setTurnType(e.target.value as TurnType)}
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                {TURN_TYPE_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {isDuplicate && (
+            <div className="rounded-md border border-amber-300 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              Ya existe un prompt para esta combinación. Si quieres modificarlo, usa
+              "Editar / nueva versión" en su card. Si lo guardas igualmente, se creará
+              v1.X+1.
+            </div>
+          )}
+
+          {copyCandidates.length > 0 && !text && (
+            <div>
+              <Label htmlFor="copyfrom">Copiar desde (opcional)</Label>
+              <select
+                id="copyfrom"
+                value={copyFrom}
+                onChange={(e) => handleCopyFrom(e.target.value)}
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">— ninguno (empezar en blanco) —</option>
+                {copyCandidates.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.segmento} · {p.version} · {p.prompt_system.slice(0, 50)}…
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Útil para arrancar con un prompt similar (ej. copiar MEGA y adaptarlo a Genesis).
+              </p>
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="text">Prompt system</Label>
+            <Textarea
+              id="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Eres un setter especializado de... Tu trabajo es..."
+              className="font-mono text-xs leading-relaxed min-h-[300px]"
+            />
+            <div className="mt-1 text-[11px] text-muted-foreground">{text.length} chars</div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label htmlFor="model">Modelo</Label>
+              <select
+                id="model"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
+                <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+                <option value="claude-opus-4-7">claude-opus-4-7</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="temp">Temperature</Label>
+              <Input
+                id="temp"
+                type="number"
+                step="0.1"
+                min="0"
+                max="1"
+                value={temperature}
+                onChange={(e) => setTemperature(e.target.value)}
+              />
+              {model.includes("opus") && (
+                <p className="mt-0.5 text-[10px] text-amber-600">
+                  Opus extended thinking ignora este parámetro.
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="maxt">Max tokens</Label>
+              <Input
+                id="maxt"
+                type="number"
+                step="256"
+                min="256"
+                max="16384"
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="desc">Descripción (opcional)</Label>
+            <Input
+              id="desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="ej: prompt inicial Genesis turn1, basado en MEGA con ajustes para tienda existente"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={setActive}
+              onChange={(e) => setSetActive(e.target.checked)}
+              className="h-4 w-4"
+            />
+            Activar inmediatamente (los workflows lo usarán en la próxima ejecución)
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() =>
+              onSave({
+                prompt_type: promptType,
+                segmento,
+                turn_type: turnType,
+                prompt_system: text,
+                description: description || undefined,
+                model,
+                temperature: parseFloat(temperature) || 0,
+                max_tokens: parseInt(maxTokens, 10) || 2048,
+                setActive,
+              })
+            }
+            disabled={busy || !canSave}
+          >
+            {busy ? "Guardando..." : "Crear prompt"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

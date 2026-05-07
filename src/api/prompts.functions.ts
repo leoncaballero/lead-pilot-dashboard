@@ -2,7 +2,40 @@ import { createServerFn } from "@tanstack/react-start";
 
 export type PromptType = "classifier" | "generator" | "validator";
 export type Segmento = "MEGA" | "Genesis" | "Prosperitas" | "Polaris";
-export type TurnType = "turn1" | "turn2_generic" | "follow_up_4h";
+export type TurnType =
+  | "turn1"
+  | "turn2_generic"
+  | "turn3_generic"
+  | "follow_up_4h"
+  | "follow_up_24h"
+  | "follow_up_3d"
+  | "objection_response"
+  | "booking_propose";
+
+export const PROMPT_TYPE_VALUES: PromptType[] = ["classifier", "generator", "validator"];
+export const SEGMENTO_VALUES: Segmento[] = ["MEGA", "Genesis", "Prosperitas", "Polaris"];
+export const TURN_TYPE_VALUES: TurnType[] = [
+  "turn1",
+  "turn2_generic",
+  "turn3_generic",
+  "follow_up_4h",
+  "follow_up_24h",
+  "follow_up_3d",
+  "objection_response",
+  "booking_propose",
+];
+
+export const DEFAULT_MODELS_BY_PROMPT_TYPE: Record<PromptType, string> = {
+  classifier: "claude-haiku-4-5-20251001",
+  generator: "claude-sonnet-4-6",
+  validator: "claude-opus-4-7",
+};
+
+export const DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE: Record<PromptType, number> = {
+  classifier: 1024,
+  generator: 4096,
+  validator: 2048,
+};
 
 export type PromptVersion = {
   id: string;
