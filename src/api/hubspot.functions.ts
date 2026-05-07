@@ -69,7 +69,7 @@ export type HubSpotLeadContext = {
   error?: string;
 };
 
-const HS_BASE = "https://connector-gateway.lovable.dev/hubspot";
+const HS_BASE = "https://api.hubapi.com";
 
 const CONTACT_PROPS = [
   "email",
@@ -114,22 +114,18 @@ const CALL_PROPS = [
   "hs_call_body",
 ];
 
-function getKeys(): { lovable: string; hubspot: string } {
-  const lovable = process.env.LOVABLE_API_KEY;
-  const hubspot = process.env.HUBSPOT_API_KEY;
-  if (!lovable) throw new Error("LOVABLE_API_KEY no configurado");
-  if (!hubspot) throw new Error("HUBSPOT_API_KEY no configurado (conecta HubSpot en Connectors)");
-  return { lovable, hubspot };
+function getApiKey(): string | null {
+  return process.env.HUBSPOT_API_KEY ?? null;
 }
 
 async function hsGet<T>(path: string): Promise<T> {
-  const { lovable, hubspot } = getKeys();
+  const key = getApiKey();
+  if (!key) {
+    throw new Error("HUBSPOT_API_KEY no configurado en Lovable Cloud secrets");
+  }
   const res = await fetch(`${HS_BASE}${path}`, {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${lovable}`,
-      "X-Connection-Api-Key": hubspot,
-    },
+    headers: { Authorization: `Bearer ${key}` },
   });
   if (!res.ok) {
     const body = await res.text();
@@ -140,12 +136,14 @@ async function hsGet<T>(path: string): Promise<T> {
 }
 
 async function hsPost<T>(path: string, body: unknown): Promise<T> {
-  const { lovable, hubspot } = getKeys();
+  const key = getApiKey();
+  if (!key) {
+    throw new Error("HUBSPOT_API_KEY no configurado en Lovable Cloud secrets");
+  }
   const res = await fetch(`${HS_BASE}${path}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${lovable}`,
-      "X-Connection-Api-Key": hubspot,
+      Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
