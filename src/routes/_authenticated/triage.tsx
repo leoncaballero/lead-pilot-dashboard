@@ -33,6 +33,7 @@ import {
   getRealtimeConfig,
   getTriageCases,
   rejectCase,
+  type ClassificationOutput,
   type TriageCase,
 } from "@/api/triage.functions";
 import { ConversationThread } from "@/components/ConversationThread";
@@ -235,11 +236,8 @@ function TriagePending() {
 // ---------- page ----------
 
 function TriagePage() {
-  const { cases, realtime } = Route.useLoaderData();
+  const { cases: allCases, realtime } = Route.useLoaderData();
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<string | null>(
-    cases[0]?.id ?? null
-  );
   const [pending, setPending] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
@@ -248,12 +246,34 @@ function TriagePage() {
   const [bulkApproveOpen, setBulkApproveOpen] = useState(false);
   const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
 
+  // Filtros de la sidebar (clickables)
+  const [turnTypeFilter, setTurnTypeFilter] = useState<string | null>(null);
+  const [segmentoFilter, setSegmentoFilter] = useState<string | null>(null);
+  const [confidenceFilter, setConfidenceFilter] = useState<
+    "high" | "medium" | "low" | null
+  >(null);
+
+  const cases = useMemo(() => {
+    return (allCases as TriageCase[]).filter((c) => {
+      if (turnTypeFilter && (c.turn_type ?? "turn1") !== turnTypeFilter)
+        return false;
+      if (segmentoFilter && c.segmento !== segmentoFilter) return false;
+      if (confidenceFilter && confidenceLevel(c).level !== confidenceFilter)
+        return false;
+      return true;
+    });
+  }, [allCases, turnTypeFilter, segmentoFilter, confidenceFilter]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(
+    cases[0]?.id ?? null
+  );
+
   const approveFn = useServerFn(approveCase);
   const rejectFn = useServerFn(rejectCase);
   const deepFn = useServerFn(deepReviewCase);
   const editFn = useServerFn(editCase);
 
-  // Mantener selección válida cuando la lista cambia
+  // Mantener selección válida cuando la lista cambia (por filtro o realtime)
   useEffect(() => {
     if (cases.length === 0) {
       setSelectedId(null);
@@ -263,6 +283,14 @@ function TriagePage() {
       setSelectedId(cases[0].id);
     }
   }, [cases, selectedId]);
+
+  function clearFilters() {
+    setTurnTypeFilter(null);
+    setSegmentoFilter(null);
+    setConfidenceFilter(null);
+  }
+  const anyFilterActive =
+    turnTypeFilter !== null || segmentoFilter !== null || confidenceFilter !== null;
 
   // Realtime: escuchar cambios y refrescar el loader
   useEffect(() => {
@@ -462,7 +490,11 @@ function TriagePage() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <ConfidenceLegend cases={cases} />
+          <ConfidenceLegend
+            cases={allCases as TriageCase[]}
+            activeFilter={confidenceFilter}
+            onFilterChange={setConfidenceFilter}
+          />
           <button
             type="button"
             onClick={() => setShortcutsOpen(true)}
@@ -472,7 +504,9 @@ function TriagePage() {
             ? Atajos
           </button>
           <span>
-            {cases.length} caso{cases.length === 1 ? "" : "s"}
+            {anyFilterActive
+              ? `${cases.length} de ${(allCases as TriageCase[]).length}`
+              : `${cases.length} caso${cases.length === 1 ? "" : "s"}`}
           </span>
         </div>
       </div>
@@ -509,28 +543,39 @@ function TriagePage() {
 
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar lista */}
-        <aside className="w-[30%] min-w-[260px] flex flex-col gap-2 overflow-y-auto pr-1">
-          {cases.length === 0 ? (
-            <EmptyQueue />
-          ) : (
-            cases.map((c: TriageCase) => (
-              <CaseListItem
-                key={c.id}
-                case={c}
-                active={c.id === selectedId}
-                selected={selectedIds.has(c.id)}
-                onToggleSelect={(checked) => toggleSelect(c.id, checked)}
-                onClick={() => setSelectedId(c.id)}
-              />
-            ))
-          )}
+        <aside className="w-[30%] min-w-[260px] flex flex-col gap-2 overflow-hidden pr-1">
+          <FilterBar
+            cases={allCases as TriageCase[]}
+            turnTypeFilter={turnTypeFilter}
+            segmentoFilter={segmentoFilter}
+            onTurnTypeChange={setTurnTypeFilter}
+            onSegmentoChange={setSegmentoFilter}
+            anyFilterActive={anyFilterActive}
+            onClearFilters={clearFilters}
+          />
+          <div className="flex flex-col gap-2 overflow-y-auto pr-1 flex-1">
+            {cases.length === 0 ? (
+              <EmptyQueue />
+            ) : (
+              cases.map((c: TriageCase) => (
+                <CaseListItem
+                  key={c.id}
+                  case={c}
+                  active={c.id === selectedId}
+                  selected={selectedIds.has(c.id)}
+                  onToggleSelect={(checked) => toggleSelect(c.id, checked)}
+                  onClick={() => setSelectedId(c.id)}
+                />
+              ))
+            )}
+          </div>
         </aside>
 
         {/* Panel detalle */}
         <section className="flex-1 min-w-0 overflow-hidden rounded-lg border bg-card flex flex-col">
           {selected ? (
             <>
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 min-h-0">
                 <CaseDetail
                   case={selected}
                   index={selectedIndex}
@@ -816,25 +861,178 @@ function CaseListItem({
   );
 }
 
-function ConfidenceLegend({ cases }: { cases: TriageCase[] }) {
+function ConfidenceLegend({
+  cases,
+  activeFilter,
+  onFilterChange,
+}: {
+  cases: TriageCase[];
+  activeFilter: "high" | "medium" | "low" | null;
+  onFilterChange: (filter: "high" | "medium" | "low" | null) => void;
+}) {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const c of cases) {
     counts[confidenceLevel(c).level] += 1;
   }
+  function toggle(level: "high" | "medium" | "low") {
+    onFilterChange(activeFilter === level ? null : level);
+  }
+  const items: Array<{
+    level: "high" | "medium" | "low";
+    label: string;
+    color: string;
+  }> = [
+    { level: "high", label: "alta", color: "bg-emerald-500" },
+    { level: "medium", label: "media", color: "bg-amber-500" },
+    { level: "low", label: "baja", color: "bg-red-500" },
+  ];
   return (
-    <div className="hidden md:flex items-center gap-2 text-[11px]">
-      <span className="inline-flex items-center gap-1">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        <span>{counts.high} alta</span>
+    <div className="hidden md:flex items-center gap-1 text-[11px]">
+      {items.map(({ level, label, color }) => {
+        const active = activeFilter === level;
+        return (
+          <button
+            key={level}
+            type="button"
+            onClick={() => toggle(level)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors",
+              active
+                ? "border-foreground bg-accent text-foreground"
+                : "border-transparent hover:bg-accent"
+            )}
+            title={`Filtrar por confianza ${label}`}
+          >
+            <span className={cn("h-2 w-2 rounded-full", color)} />
+            <span>
+              {counts[level]} {label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- filter bar (sidebar) ----------
+
+function FilterBar({
+  cases,
+  turnTypeFilter,
+  segmentoFilter,
+  onTurnTypeChange,
+  onSegmentoChange,
+  anyFilterActive,
+  onClearFilters,
+}: {
+  cases: TriageCase[];
+  turnTypeFilter: string | null;
+  segmentoFilter: string | null;
+  onTurnTypeChange: (v: string | null) => void;
+  onSegmentoChange: (v: string | null) => void;
+  anyFilterActive: boolean;
+  onClearFilters: () => void;
+}) {
+  // Counts dinamicos sobre el dataset completo
+  const turnTypeCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of cases) {
+      const k = c.turn_type ?? "turn1";
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  }, [cases]);
+  const segmentoCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of cases) {
+      if (c.segmento) m.set(c.segmento, (m.get(c.segmento) ?? 0) + 1);
+    }
+    return m;
+  }, [cases]);
+
+  const turnTypes = Array.from(turnTypeCounts.entries())
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const segmentos = Array.from(segmentoCounts.entries())
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  if (turnTypes.length <= 1 && segmentos.length <= 1 && !anyFilterActive) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border bg-card p-2">
+      {turnTypes.length > 1 && (
+        <FilterChipRow
+          label="Tipo"
+          options={turnTypes.map(([k, n]) => ({
+            value: k,
+            label: TURN_TYPE_LABELS[k]?.label ?? k,
+            count: n,
+          }))}
+          activeValue={turnTypeFilter}
+          onChange={onTurnTypeChange}
+        />
+      )}
+      {segmentos.length > 1 && (
+        <FilterChipRow
+          label="Segm."
+          options={segmentos.map(([k, n]) => ({ value: k, label: k, count: n }))}
+          activeValue={segmentoFilter}
+          onChange={onSegmentoChange}
+        />
+      )}
+      {anyFilterActive && (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="text-[11px] text-muted-foreground hover:text-foreground underline"
+        >
+          Limpiar filtros
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FilterChipRow({
+  label,
+  options,
+  activeValue,
+  onChange,
+}: {
+  label: string;
+  options: Array<{ value: string; label: string; count: number }>;
+  activeValue: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="text-[10px] font-medium uppercase text-muted-foreground w-10 shrink-0">
+        {label}
       </span>
-      <span className="inline-flex items-center gap-1">
-        <span className="h-2 w-2 rounded-full bg-amber-500" />
-        <span>{counts.medium} media</span>
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <span className="h-2 w-2 rounded-full bg-red-500" />
-        <span>{counts.low} baja</span>
-      </span>
+      {options.map(({ value, label: optLabel, count }) => {
+        const active = activeValue === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onChange(active ? null : value)}
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px] transition-colors",
+              active
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background hover:bg-accent text-foreground"
+            )}
+          >
+            {optLabel}
+            <span className={cn("ml-1", active ? "opacity-80" : "text-muted-foreground")}>
+              {count}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -866,184 +1064,253 @@ function CaseDetail({
   const checks = (val.checks ?? null) as Record<string, boolean> | null;
   const comentariosValidador = typeof val.comentarios_adicionales === "string" ? val.comentarios_adicionales : null;
 
+  const hasCriticos = (c.errores_criticos?.length ?? 0) > 0;
+  const hasRazonesFallo = (c.razones_fallo?.length ?? 0) > 0;
+  const hasChecksDetail = checks && Object.keys(checks).length > 0;
+  const hasValidationDetail = hasRazonesFallo || hasChecksDetail || comentariosValidador;
+
   return (
-    <div className="flex flex-col">
-      <div className="border-b p-6">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-muted-foreground">
+    <div className="flex flex-col h-full">
+      {/* Header compacto: una linea con todos los chips + lead + SLA */}
+      <div className="border-b px-5 py-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium text-muted-foreground">
             {index + 1}/{total}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", conf.pillClasses)}>
-              {conf.label}
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span className={cn("rounded-full px-2 py-0.5 font-medium", conf.pillClasses)}>
+            {conf.label}
+          </span>
+          <span className={cn("rounded-full px-2 py-0.5 font-medium", turnTypeMeta(c).classes)}>
+            {turnTypeMeta(c).label}
+          </span>
+          {c.patron && (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              Patrón {c.patron}
+            </Badge>
+          )}
+          <span className="ml-auto flex items-center gap-2">
+            <span className={cn("font-medium", slaColor(min))}>
+              {min === null ? "—" : `${min} min en cola`}
             </span>
-            <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", turnTypeMeta(c).classes)}>
-              {turnTypeMeta(c).label}
-            </span>
-            {c.patron && <Badge variant="outline">Patrón {c.patron}</Badge>}
-          </div>
+          </span>
         </div>
-        <div className="mt-2 flex items-end justify-between gap-4">
+        <div className="mt-1.5 flex items-end justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold">
+            <h2 className="truncate text-base font-semibold leading-tight">
               {c.lead_name || c.lead_email || c.smartlead_lead_id || c.id}
             </h2>
-            {c.lead_email && (
-              <p className="truncate text-xs text-muted-foreground">
+            {c.lead_email && c.lead_name && (
+              <p className="truncate text-[11px] text-muted-foreground">
                 {c.lead_email}
               </p>
             )}
           </div>
-          <div className={cn("text-sm font-medium", slaColor(min))}>
-            En cola: {min === null ? "—" : `${min} min`}
-          </div>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">{conf.hint}</p>
       </div>
 
-      <div className="space-y-6 p-6">
-        <Section title="Conversación completa (Smartlead)">
+      {/* Body: 2 columnas. Izq conversacion (60%), der Turn 1 + validacion (40%) */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_2fr]">
+        {/* Columna izquierda: conversacion (scrollable independiente) */}
+        <div className="min-h-0 overflow-y-auto border-b lg:border-b-0 lg:border-r p-5">
+          <h3 className="mb-3 text-xs font-medium uppercase text-muted-foreground">
+            Conversación · último reply {formatRel(min)}
+          </h3>
           <ConversationThread smartleadLeadId={c.smartlead_lead_id ?? null} />
-          <p className="mt-2 text-xs text-muted-foreground">
-            Último reply {formatRel(min)}
-          </p>
-        </Section>
+        </div>
 
-        <Section title="Clasificación IA">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <Field label="Patrón" value={cls.patron ?? c.patron ?? "—"} />
-            <Field label="Tono" value={cls.tono_lead ?? "—"} />
-            {typeof cls.es_lead_valido === "boolean" && (
-              <Field
-                label="Lead válido"
-                value={cls.es_lead_valido ? "Sí" : "No"}
+        {/* Columna derecha: Turn 1 destacado + score + acciones (scrollable) */}
+        <div className="min-h-0 overflow-y-auto p-5 space-y-5">
+          {/* Turn 1: lo más importante, primero, en font sans para lectura natural */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-medium uppercase text-muted-foreground">
+                Respuesta propuesta
+              </h3>
+              <ScoreCompact
+                score={c.score}
+                checksPasados={checksPasados}
+                checksFallidos={checksFallidos}
+                validado={c.validado}
               />
-            )}
-            {cls.canal_pedido && (
-              <Field label="Canal pedido" value={cls.canal_pedido} />
-            )}
-          </dl>
-          {typeof cls.notas === "string" && cls.notas && (
-            <p className="mt-3 text-sm text-muted-foreground">{cls.notas}</p>
-          )}
-        </Section>
-
-        <Section title="Turn 1 Generado">
-          {c.turn_1_generated ? (
-            <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-sm leading-relaxed text-foreground">
-              {c.turn_1_generated}
-            </pre>
-          ) : (
-            <Empty />
-          )}
-        </Section>
-
-        <Section title="Validación IA">
-          <div className="flex items-baseline gap-3">
-            <span className={cn("text-4xl font-bold", scoreColor(c.score))}>
-              {typeof c.score === "number" ? c.score : "—"}
-            </span>
-            <span className="text-sm text-muted-foreground">/ 100</span>
-            {c.validado === true && (
-              <Badge variant="secondary" className="ml-2">
-                Validado
-              </Badge>
+            </div>
+            {c.turn_1_generated ? (
+              <div className="rounded-md border bg-card p-4 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                {c.turn_1_generated}
+              </div>
+            ) : (
+              <Empty />
             )}
           </div>
 
-          {(checksPasados !== null || checksFallidos !== null) && (
-            <div className="mt-3 flex gap-4 text-sm">
-              <span>
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                  {checksPasados ?? "—"}
-                </span>
-                <span className="text-muted-foreground"> pasados</span>
-              </span>
-              <span>
-                <span className="font-medium text-red-600 dark:text-red-400">
-                  {checksFallidos ?? "—"}
-                </span>
-                <span className="text-muted-foreground"> fallidos</span>
-              </span>
-              <span className="text-muted-foreground">de 12</span>
-            </div>
-          )}
-
-          {c.errores_criticos && c.errores_criticos.length > 0 && (
-            <div className="mt-4">
-              <h4 className="mb-1 text-xs font-semibold uppercase text-red-600 dark:text-red-400">
-                Errores críticos
+          {/* Errores críticos: solo si los hay, destacados */}
+          {hasCriticos && (
+            <div className="rounded-md border border-red-300 bg-red-50/70 p-3 dark:border-red-900/60 dark:bg-red-950/20">
+              <h4 className="mb-1 text-[11px] font-semibold uppercase text-red-700 dark:text-red-300">
+                Errores críticos · {c.errores_criticos?.length}
               </h4>
-              <ul className="list-disc space-y-1 pl-5 text-sm text-red-600 dark:text-red-400">
-                {c.errores_criticos.map((e, i) => (
+              <ul className="list-disc space-y-0.5 pl-5 text-xs text-red-700 dark:text-red-300">
+                {c.errores_criticos!.map((e, i) => (
                   <li key={i}>{e}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          {c.razones_fallo && c.razones_fallo.length > 0 && (
-            <div className="mt-4">
-              <h4 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
-                Razones de fallo
-              </h4>
-              <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                {c.razones_fallo.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* Resumen de clasificación: compacto */}
+          <ClassificationCompact c={c} cls={cls} />
 
-          {checks && Object.keys(checks).length > 0 && (
-            <div className="mt-4">
-              <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                Detalle de los 12 checks
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
-                {Object.entries(CHECK_LABELS).map(([key, label]) => {
-                  const passed = checks[key];
-                  const known = passed !== undefined;
-                  return (
-                    <div
-                      key={key}
-                      className={cn(
-                        "flex items-center gap-2 text-xs",
-                        !known && "text-muted-foreground",
-                        known && passed && "text-emerald-700 dark:text-emerald-400",
-                        known && !passed && "text-red-700 dark:text-red-400"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold leading-none",
-                          known && passed && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40",
-                          known && !passed && "bg-red-100 text-red-700 dark:bg-red-900/40",
-                          !known && "bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {known ? (passed ? "✓" : "✗") : "?"}
-                      </span>
-                      <span>{label}</span>
+          {/* Detalle de validación: colapsado por defecto, expandible */}
+          {hasValidationDetail && (
+            <details className="group rounded-md border bg-card">
+              <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 flex items-center justify-between">
+                <span>Detalle de validación (12 checks · razones · comentarios)</span>
+                <span className="text-muted-foreground transition-transform group-open:rotate-180">
+                  ▾
+                </span>
+              </summary>
+              <div className="space-y-3 border-t p-3">
+                {hasRazonesFallo && (
+                  <div>
+                    <h4 className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">
+                      Razones de fallo
+                    </h4>
+                    <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                      {c.razones_fallo!.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {hasChecksDetail && (
+                  <div>
+                    <h4 className="mb-2 text-[11px] font-semibold uppercase text-muted-foreground">
+                      Detalle de los 12 checks
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1">
+                      {Object.entries(CHECK_LABELS).map(([key, label]) => {
+                        const passed = checks![key];
+                        const known = passed !== undefined;
+                        return (
+                          <div
+                            key={key}
+                            className={cn(
+                              "flex items-center gap-1.5 text-[11px]",
+                              !known && "text-muted-foreground",
+                              known && passed && "text-emerald-700 dark:text-emerald-400",
+                              known && !passed && "text-red-700 dark:text-red-400"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold leading-none shrink-0",
+                                known && passed && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40",
+                                known && !passed && "bg-red-100 text-red-700 dark:bg-red-900/40",
+                                !known && "bg-muted text-muted-foreground"
+                              )}
+                            >
+                              {known ? (passed ? "✓" : "✗") : "?"}
+                            </span>
+                            <span className="truncate">{label}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
+                {comentariosValidador && (
+                  <div>
+                    <h4 className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">
+                      Comentarios del validador
+                    </h4>
+                    <p className="text-xs text-foreground whitespace-pre-wrap">
+                      {comentariosValidador}
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
+            </details>
           )}
 
-          {comentariosValidador && (
-            <div className="mt-4 rounded-md bg-muted/40 p-3">
-              <h4 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
-                Comentarios del Validador
-              </h4>
-              <p className="text-sm text-foreground whitespace-pre-wrap">
-                {comentariosValidador}
-              </p>
-            </div>
-          )}
-        </Section>
+          <p className="text-[11px] text-muted-foreground italic">
+            {conf.hint}
+          </p>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ScoreCompact({
+  score,
+  checksPasados,
+  checksFallidos,
+  validado,
+}: {
+  score?: number | null;
+  checksPasados: number | null;
+  checksFallidos: number | null;
+  validado?: boolean | null;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className={cn("text-2xl font-bold leading-none", scoreColor(score))}>
+        {typeof score === "number" ? score : "—"}
+      </span>
+      <span className="text-muted-foreground">/100</span>
+      {(checksPasados !== null || checksFallidos !== null) && (
+        <span className="text-muted-foreground">
+          ·{" "}
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+            {checksPasados ?? "—"}
+          </span>
+          {"/"}
+          <span className="text-red-600 dark:text-red-400 font-medium">
+            {checksFallidos ?? "—"}
+          </span>
+        </span>
+      )}
+      {validado === true && (
+        <Badge variant="secondary" className="h-4 px-1.5 text-[9px]">
+          Validado
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function ClassificationCompact({
+  c,
+  cls,
+}: {
+  c: TriageCase;
+  cls: ClassificationOutput;
+}) {
+  const items: Array<{ label: string; value: string | null | undefined }> = [
+    { label: "Patrón", value: (cls.patron as string | undefined) ?? c.patron },
+    { label: "Tono", value: cls.tono_lead as string | undefined },
+    typeof cls.es_lead_valido === "boolean"
+      ? { label: "Válido", value: cls.es_lead_valido ? "Sí" : "No" }
+      : { label: "", value: null },
+    { label: "Canal pedido", value: cls.canal_pedido as string | undefined },
+  ].filter((i) => i.value);
+  if (items.length === 0 && !cls.notas) return null;
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 text-xs">
+      <h4 className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
+        Clasificación IA
+      </h4>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {items.map((i, idx) => (
+          <span key={idx}>
+            <span className="text-muted-foreground">{i.label}:</span>{" "}
+            <span className="font-medium">{i.value}</span>
+          </span>
+        ))}
+      </div>
+      {typeof cls.notas === "string" && cls.notas && (
+        <p className="mt-1.5 text-muted-foreground">{cls.notas}</p>
+      )}
     </div>
   );
 }
@@ -1430,32 +1697,6 @@ function computeLineDiff(original: string, edited: string): LineDiffResult {
 }
 
 // ---------- shared ----------
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{value}</dd>
-    </div>
-  );
-}
 
 function Empty() {
   return <p className="text-sm italic text-muted-foreground">Sin contenido.</p>;
