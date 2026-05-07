@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getHistoryCases, type HistoryCase } from "@/api/history.functions";
 import { ConversationThread } from "@/components/ConversationThread";
+import { HubSpotLeadContextCard } from "@/components/HubSpotLeadContext";
 
 const STATUS_OPTIONS = [
   "pending_review",
@@ -334,6 +335,8 @@ function CaseDetailDialogBody({ c }: { c: HistoryCase }) {
         <Field label="Sent via" value={c.sent_via} />
         <Field label="Outcome" value={c.outcome} />
       </div>
+
+      <HubSpotLeadContextCard hubspotContactId={c.hubspot_contact_id ?? null} />
 
       <div>
         <div className="text-xs font-medium uppercase text-muted-foreground mb-2">Conversación completa (Smartlead)</div>
