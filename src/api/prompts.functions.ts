@@ -904,8 +904,13 @@ export type PromptVersionStats = {
   replied_count: number;
   /** De los atribuidos, cuántos booked */
   booked_count: number;
+  /** Cerrado WON (venta) */
+  closed_won_count: number;
+  /** Cerrado LOST */
+  closed_lost_count: number;
   reply_rate: number;
   booking_rate: number;
+  win_rate: number;
 };
 
 export const getPromptStats = createServerFn({ method: "GET" })
@@ -942,60 +947,220 @@ export const getPromptStats = createServerFn({ method: "GET" })
       method: "GET",
     })) ?? []) as PRow[];
 
-    // 3. Outcomes de esos pipeline_ids (replied, booked)
-    const repliedSet = new Set<string>();
-    const bookedSet = new Set<string>();
-    if (pipelineRows.length > 0) {
-      const idsList = pipelineRows.map((r) => `"${r.id}"`).join(",");
-      const oParams = new URLSearchParams({
-        select: "pipeline_id,outcome",
-        outcome: "in.(replied,booked)",
-        limit: "10000",
-      });
-      oParams.append("pipeline_id", `in.(${idsList})`);
-      type ORow = { pipeline_id: string; outcome: string };
-      const outcomes = ((await pgrest(`${OUTCOMES_TABLE}?${oParams.toString()}`, {
-        method: "GET",
-      })) ?? []) as ORow[];
-      for (const o of outcomes) {
-        if (o.outcome === "replied") repliedSet.add(o.pipeline_id);
-        if (o.outcome === "booked") bookedSet.add(o.pipeline_id);
-      }
-    }
+    // 3. Outcomes de esos pipeline_ids
+    const outcomeMap = await fetchOutcomeSetsForPipelines(pipelineRows.map((r) => r.id));
 
     // 4. Para cada versión calculamos la ventana [v.created_at, v_next.created_at)
     const stats: PromptVersionStats[] = versions.map((v, i) => {
-      const start = v.created_at ? Date.parse(v.created_at) : 0;
-      const end =
-        i + 1 < versions.length && versions[i + 1].created_at
-          ? Date.parse(versions[i + 1].created_at!)
-          : Number.POSITIVE_INFINITY;
-
-      let generated = 0;
-      let replied = 0;
-      let booked = 0;
-      for (const r of pipelineRows) {
-        const t = r.created_at ? Date.parse(r.created_at) : 0;
-        if (t < start || t >= end) continue;
-        generated++;
-        if (repliedSet.has(r.id)) replied++;
-        if (bookedSet.has(r.id)) booked++;
-      }
-      return {
-        version_id: v.id,
-        version: v.version,
-        is_active: v.is_active,
-        created_at: v.created_at,
-        generated_count: generated,
-        replied_count: replied,
-        booked_count: booked,
-        reply_rate: generated > 0 ? replied / generated : 0,
-        booking_rate: generated > 0 ? booked / generated : 0,
-      };
+      return computeStatsForVersion(v, i, versions, pipelineRows, outcomeMap);
     });
 
     return { stats };
   });
+
+type OutcomeSets = {
+  replied: Set<string>;
+  booked: Set<string>;
+  closed_won: Set<string>;
+  closed_lost: Set<string>;
+};
+
+async function fetchOutcomeSetsForPipelines(pipelineIds: string[]): Promise<OutcomeSets> {
+  const sets: OutcomeSets = {
+    replied: new Set(),
+    booked: new Set(),
+    closed_won: new Set(),
+    closed_lost: new Set(),
+  };
+  if (pipelineIds.length === 0) return sets;
+  // PostgREST IN() limit prudent — chunkear en lotes de 200
+  const chunks: string[][] = [];
+  for (let i = 0; i < pipelineIds.length; i += 200) chunks.push(pipelineIds.slice(i, i + 200));
+  for (const chunk of chunks) {
+    const idsList = chunk.map((i) => `"${i}"`).join(",");
+    const oParams = new URLSearchParams({
+      select: "pipeline_id,outcome",
+      outcome: "in.(replied,booked,closed_won,closed_lost)",
+      limit: "10000",
+    });
+    oParams.append("pipeline_id", `in.(${idsList})`);
+    type ORow = { pipeline_id: string; outcome: string };
+    const outcomes = ((await pgrest(`${OUTCOMES_TABLE}?${oParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as ORow[];
+    for (const o of outcomes) {
+      if (o.outcome === "replied") sets.replied.add(o.pipeline_id);
+      else if (o.outcome === "booked") sets.booked.add(o.pipeline_id);
+      else if (o.outcome === "closed_won") sets.closed_won.add(o.pipeline_id);
+      else if (o.outcome === "closed_lost") sets.closed_lost.add(o.pipeline_id);
+    }
+  }
+  return sets;
+}
+
+function computeStatsForVersion(
+  v: { id: string; version: string; is_active: boolean; created_at: string | null },
+  index: number,
+  allVersions: Array<{ created_at: string | null }>,
+  pipelineRows: Array<{ id: string; created_at: string }>,
+  outcomes: OutcomeSets
+): PromptVersionStats {
+  const start = v.created_at ? Date.parse(v.created_at) : 0;
+  const end =
+    index + 1 < allVersions.length && allVersions[index + 1].created_at
+      ? Date.parse(allVersions[index + 1].created_at!)
+      : Number.POSITIVE_INFINITY;
+  let generated = 0;
+  let replied = 0;
+  let booked = 0;
+  let won = 0;
+  let lost = 0;
+  for (const r of pipelineRows) {
+    const t = r.created_at ? Date.parse(r.created_at) : 0;
+    if (t < start || t >= end) continue;
+    generated++;
+    if (outcomes.replied.has(r.id)) replied++;
+    if (outcomes.booked.has(r.id)) booked++;
+    if (outcomes.closed_won.has(r.id)) won++;
+    if (outcomes.closed_lost.has(r.id)) lost++;
+  }
+  return {
+    version_id: v.id,
+    version: v.version,
+    is_active: v.is_active,
+    created_at: v.created_at,
+    generated_count: generated,
+    replied_count: replied,
+    booked_count: booked,
+    closed_won_count: won,
+    closed_lost_count: lost,
+    reply_rate: generated > 0 ? replied / generated : 0,
+    booking_rate: generated > 0 ? booked / generated : 0,
+    win_rate: generated > 0 ? won / generated : 0,
+  };
+}
+
+/**
+ * Stats de TODAS las versiones agrupadas por (turn_type, prompt_type, segmento).
+ * Pensado para el dashboard de comparativa de prompts (`/prompt-performance`).
+ *
+ * Optimización: una sola query bulk de versions + una de pipeline (todas) +
+ * una de outcomes (todas), sin viajar a la red por cada combinación.
+ */
+export type PromptComparisonRow = {
+  combo_key: string;
+  turn_type: TurnType;
+  prompt_type: PromptType;
+  segmento: Segmento;
+  versions: PromptVersionStats[];
+};
+
+export const listAllPromptStats = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ rows: PromptComparisonRow[] }> => {
+    // 1. Todas las versiones, ordenadas
+    const vParams = new URLSearchParams({
+      select: "id,version,is_active,created_at,prompt_type,segmento,turn_type",
+      order: "turn_type.asc,prompt_type.asc,segmento.asc,created_at.asc",
+      limit: "5000",
+    });
+    type VRow = {
+      id: string;
+      version: string;
+      is_active: boolean;
+      created_at: string | null;
+      prompt_type: PromptType;
+      segmento: Segmento;
+      turn_type: TurnType;
+    };
+    const versions = ((await pgrest(`${TABLE}?${vParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as VRow[];
+    if (versions.length === 0) return { rows: [] };
+
+    // 2. Set de (segmento, turn_type) que tienen alguna versión → pedimos solo esos
+    const segTurnPairs = new Set(versions.map((v) => `${v.segmento}|${v.turn_type}`));
+
+    // 3. Pipeline rows de TODOS esos (segmento, turn_type) en una query.
+    // Agrupamos por (segmento, turn_type) en JS después.
+    const earliestByCombo = new Map<string, string>();
+    for (const v of versions) {
+      const key = `${v.segmento}|${v.turn_type}`;
+      const cur = earliestByCombo.get(key);
+      if (!cur || (v.created_at && v.created_at < cur)) {
+        earliestByCombo.set(key, v.created_at ?? new Date(0).toISOString());
+      }
+    }
+    const earliestOverall =
+      Array.from(earliestByCombo.values()).sort()[0] ?? new Date(0).toISOString();
+
+    const pParams = new URLSearchParams({
+      select: "id,created_at,segmento,turn_type",
+      order: "created_at.asc",
+      limit: "10000",
+    });
+    pParams.append("created_at", `gte.${earliestOverall}`);
+    type PRow = {
+      id: string;
+      created_at: string;
+      segmento: string;
+      turn_type: string;
+    };
+    const allPipelineRows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as PRow[];
+
+    // 4. Filter pipeline rows a los pares relevantes y agrupar
+    const pipelineByCombo = new Map<string, Array<{ id: string; created_at: string }>>();
+    for (const r of allPipelineRows) {
+      const key = `${r.segmento}|${r.turn_type}`;
+      if (!segTurnPairs.has(key)) continue;
+      if (!pipelineByCombo.has(key)) pipelineByCombo.set(key, []);
+      pipelineByCombo.get(key)!.push({ id: r.id, created_at: r.created_at });
+    }
+
+    // 5. Outcomes una sola vez, para todos los pipeline_ids relevantes
+    const allRelevantIds = new Set<string>();
+    for (const arr of pipelineByCombo.values()) {
+      for (const r of arr) allRelevantIds.add(r.id);
+    }
+    const outcomes = await fetchOutcomeSetsForPipelines(Array.from(allRelevantIds));
+
+    // 6. Agrupar versions por (turn_type, prompt_type, segmento) y computar stats
+    const rowsMap = new Map<string, PromptComparisonRow>();
+    for (const v of versions) {
+      const key = `${v.turn_type}|${v.prompt_type}|${v.segmento}`;
+      let row = rowsMap.get(key);
+      if (!row) {
+        row = {
+          combo_key: key,
+          turn_type: v.turn_type,
+          prompt_type: v.prompt_type,
+          segmento: v.segmento,
+          versions: [],
+        };
+        rowsMap.set(key, row);
+      }
+    }
+    // Para cada combo, ordenar versions cronológicamente y calcular stats
+    for (const row of rowsMap.values()) {
+      const versionsForCombo = versions
+        .filter(
+          (v) =>
+            v.turn_type === row.turn_type &&
+            v.prompt_type === row.prompt_type &&
+            v.segmento === row.segmento
+        )
+        .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+      const segTurnKey = `${row.segmento}|${row.turn_type}`;
+      const pipelineRows = pipelineByCombo.get(segTurnKey) ?? [];
+      row.versions = versionsForCombo.map((v, i) =>
+        computeStatsForVersion(v, i, versionsForCombo, pipelineRows, outcomes)
+      );
+    }
+
+    return { rows: Array.from(rowsMap.values()) };
+  }
+);
 
 function computeNextVersion(existing: string[]): string {
   if (existing.length === 0) return "v1.0";
