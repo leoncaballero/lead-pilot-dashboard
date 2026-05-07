@@ -93,11 +93,13 @@ export const getActivityFeed = createServerFn({ method: "GET" })
     });
     const outcomeRows = await pgrest<OutcomeRow[]>(`${OUTCOMES_TABLE}?${oParams.toString()}`);
 
-    // 3. Resolver lead info para todos los pipeline_ids únicos
-    const allPids = new Set<string>([
-      ...(activityRows ?? []).map((r) => r.pipeline_id),
-      ...(outcomeRows ?? []).map((r) => r.pipeline_id),
-    ].filter(Boolean));
+    // 3. Resolver lead info para todos los pipeline_ids únicos (drop nulls)
+    const allPids = new Set<string>(
+      [
+        ...(activityRows ?? []).map((r) => r.pipeline_id),
+        ...(outcomeRows ?? []).map((r) => r.pipeline_id),
+      ].filter((x): x is string => typeof x === "string" && x.length > 0)
+    );
     type PipelineRow = {
       id: string;
       lead_name: string | null;
@@ -120,6 +122,7 @@ export const getActivityFeed = createServerFn({ method: "GET" })
     // 4. Merge + sort por occurred_at
     const events: ActivityEvent[] = [];
     for (const r of activityRows ?? []) {
+      if (!r.pipeline_id) continue; // saltar orphans
       const lead = leadMap.get(r.pipeline_id);
       events.push({
         id: `act-${r.id}`,
@@ -135,6 +138,7 @@ export const getActivityFeed = createServerFn({ method: "GET" })
       });
     }
     for (const r of outcomeRows ?? []) {
+      if (!r.pipeline_id) continue;
       const lead = leadMap.get(r.pipeline_id);
       events.push({
         id: `out-${r.id}`,
