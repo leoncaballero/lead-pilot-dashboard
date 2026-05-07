@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
 const EDIT_REASONS_TABLE = "cl001_p007_edit_reasons";
+const OUTCOMES_TABLE = "cl001_p007_outcomes";
 
 function getCreds() {
   const url = process.env.OUTBOUND_SUPABASE_URL;
@@ -192,6 +193,134 @@ export const getTopEditReasons = createServerFn({ method: "GET" }).handler(
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
+  }
+);
+
+export type OutcomesFunnel = {
+  // Casos del pipeline en los últimos 30 días con status=sent (cohort)
+  sent_total: number;
+  // De ese cohort, cuántos tienen al menos 1 outcome 'replied'
+  replied_total: number;
+  // De ese cohort, cuántos tienen al menos 1 outcome 'booked'
+  booked_total: number;
+  // Tasas (sobre sent_total)
+  reply_rate: number;
+  booking_rate: number;
+  // Booking rate sobre los que respondieron
+  booking_rate_of_replied: number;
+  generated_at: string;
+};
+
+export const getOutcomesFunnel = createServerFn({ method: "GET" }).handler(
+  async (): Promise<OutcomesFunnel> => {
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+
+    // Pipeline rows enviados en los últimos 30 días
+    const sentParams = new URLSearchParams({
+      select: "id",
+      status: "in.(sent,dry_run_only)",
+      limit: "5000",
+    });
+    sentParams.append("sent_at", `gte.${since}`);
+    const sentRows = (await pgrest(`${PIPELINE_TABLE}?${sentParams.toString()}`, {
+      method: "GET",
+    })) as { id: string }[];
+    const sentIds = new Set((sentRows ?? []).map((r) => r.id));
+
+    if (sentIds.size === 0) {
+      return {
+        sent_total: 0,
+        replied_total: 0,
+        booked_total: 0,
+        reply_rate: 0,
+        booking_rate: 0,
+        booking_rate_of_replied: 0,
+        generated_at: new Date().toISOString(),
+      };
+    }
+
+    // Outcomes de esos pipeline_ids
+    const outcomeParams = new URLSearchParams({
+      select: "pipeline_id,outcome",
+      limit: "5000",
+    });
+    outcomeParams.append("occurred_at", `gte.${since}`);
+    const outcomes = (await pgrest(`${OUTCOMES_TABLE}?${outcomeParams.toString()}`, {
+      method: "GET",
+    })) as { pipeline_id: string; outcome: string }[];
+
+    const repliedSet = new Set<string>();
+    const bookedSet = new Set<string>();
+    for (const o of outcomes ?? []) {
+      if (!sentIds.has(o.pipeline_id)) continue;
+      if (o.outcome === "replied") repliedSet.add(o.pipeline_id);
+      if (o.outcome === "booked") bookedSet.add(o.pipeline_id);
+    }
+
+    const sent_total = sentIds.size;
+    const replied_total = repliedSet.size;
+    const booked_total = bookedSet.size;
+    return {
+      sent_total,
+      replied_total,
+      booked_total,
+      reply_rate: sent_total > 0 ? replied_total / sent_total : 0,
+      booking_rate: sent_total > 0 ? booked_total / sent_total : 0,
+      booking_rate_of_replied:
+        replied_total > 0 ? booked_total / replied_total : 0,
+      generated_at: new Date().toISOString(),
+    };
+  }
+);
+
+export type RecentOutcome = {
+  id: string;
+  pipeline_id: string;
+  outcome: string;
+  outcome_source: string;
+  occurred_at: string | null;
+  details: Record<string, unknown> | null;
+  // Lead info enriquecido (join con pipeline)
+  lead_name: string | null;
+  lead_email: string | null;
+  segmento: string | null;
+};
+
+export const getRecentOutcomes = createServerFn({ method: "GET" }).handler(
+  async (): Promise<RecentOutcome[]> => {
+    const params = new URLSearchParams({
+      select:
+        "id,pipeline_id,outcome,outcome_source,occurred_at,details,cl001_p007_turn1_pipeline(lead_name,lead_email,segmento)",
+      order: "occurred_at.desc.nullslast",
+      limit: "20",
+    });
+    type Row = {
+      id: string;
+      pipeline_id: string;
+      outcome: string;
+      outcome_source: string;
+      occurred_at: string | null;
+      details: Record<string, unknown> | null;
+      cl001_p007_turn1_pipeline?: {
+        lead_name: string | null;
+        lead_email: string | null;
+        segmento: string | null;
+      } | null;
+    };
+    const rows = (await pgrest(`${OUTCOMES_TABLE}?${params.toString()}`, {
+      method: "GET",
+    })) as Row[];
+    return (rows ?? []).map((r) => ({
+      id: r.id,
+      pipeline_id: r.pipeline_id,
+      outcome: r.outcome,
+      outcome_source: r.outcome_source,
+      occurred_at: r.occurred_at,
+      details: r.details,
+      lead_name: r.cl001_p007_turn1_pipeline?.lead_name ?? null,
+      lead_email: r.cl001_p007_turn1_pipeline?.lead_email ?? null,
+      segmento: r.cl001_p007_turn1_pipeline?.segmento ?? null,
+    }));
   }
 );
 
