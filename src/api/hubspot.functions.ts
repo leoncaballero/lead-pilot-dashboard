@@ -331,3 +331,58 @@ export const getHubSpotLeadContext = createServerFn({ method: "GET" })
       };
     }
   });
+
+/**
+ * Lectura batch de "última actividad" (notes_last_contacted) para N contactos.
+ * Usado por /triage para filtrar leads que llevan X días sin contactar.
+ * Lotes de 100 (límite HubSpot batch). Devuelve un mapa contact_id → ISO date.
+ */
+export type LastContactedMap = Record<
+  string,
+  { notes_last_contacted: string | null; notes_last_updated: string | null }
+>;
+
+export const getHubSpotLastContactedBatch = createServerFn({ method: "POST" })
+  .inputValidator((data: { contact_ids: string[] }) => data)
+  .handler(
+    async ({
+      data,
+    }): Promise<{ ok: boolean; map: LastContactedMap; error?: string }> => {
+      const key = getApiKey();
+      if (!key) {
+        return { ok: false, map: {}, error: "HUBSPOT_API_KEY no configurado" };
+      }
+      const ids = data.contact_ids.filter((id) => id && id !== "null");
+      if (ids.length === 0) return { ok: true, map: {} };
+      const map: LastContactedMap = {};
+      // Chunks de 100 (HubSpot batch read max)
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        try {
+          const resp = await hsPost<{
+            results: Array<{
+              id: string;
+              properties: Record<string, string | null>;
+            }>;
+          }>("/crm/v3/objects/contacts/batch/read", {
+            properties: ["notes_last_contacted", "notes_last_updated"],
+            inputs: chunk.map((id) => ({ id: String(id) })),
+          });
+          for (const r of resp.results ?? []) {
+            map[r.id] = {
+              notes_last_contacted: r.properties.notes_last_contacted ?? null,
+              notes_last_updated: r.properties.notes_last_updated ?? null,
+            };
+          }
+        } catch (e) {
+          // Si un chunk falla, devolvemos lo que tengamos hasta ahora
+          return {
+            ok: false,
+            map,
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }
+      }
+      return { ok: true, map };
+    }
+  );
