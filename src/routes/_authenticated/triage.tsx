@@ -277,17 +277,34 @@ function TriagePage() {
   const [confidenceFilter, setConfidenceFilter] = useState<
     "high" | "medium" | "low" | null
   >(null);
+  // Filtro por antigüedad en cola (basado en reply_timestamp del caso)
+  type DateFilterKey = "1h" | "4h" | "24h" | "3d" | "7d" | null;
+  const [dateFilter, setDateFilter] = useState<DateFilterKey>(null);
 
   const cases = useMemo(() => {
+    const now = Date.now();
+    const thresholds: Record<Exclude<DateFilterKey, null>, number> = {
+      "1h": 1 * 60 * 60 * 1000,
+      "4h": 4 * 60 * 60 * 1000,
+      "24h": 24 * 60 * 60 * 1000,
+      "3d": 3 * 24 * 60 * 60 * 1000,
+      "7d": 7 * 24 * 60 * 60 * 1000,
+    };
     return (allCases as TriageCase[]).filter((c) => {
       if (turnTypeFilter && (c.turn_type ?? "turn1") !== turnTypeFilter)
         return false;
       if (segmentoFilter && c.segmento !== segmentoFilter) return false;
       if (confidenceFilter && confidenceLevel(c).level !== confidenceFilter)
         return false;
+      if (dateFilter) {
+        const ts = c.reply_timestamp ? Date.parse(c.reply_timestamp) : NaN;
+        if (Number.isNaN(ts)) return false;
+        const age = now - ts;
+        if (age < thresholds[dateFilter]) return false;
+      }
       return true;
     });
-  }, [allCases, turnTypeFilter, segmentoFilter, confidenceFilter]);
+  }, [allCases, turnTypeFilter, segmentoFilter, confidenceFilter, dateFilter]);
 
   const [selectedId, setSelectedId] = useState<string | null>(
     cases[0]?.id ?? null
@@ -314,9 +331,13 @@ function TriagePage() {
     setTurnTypeFilter(null);
     setSegmentoFilter(null);
     setConfidenceFilter(null);
+    setDateFilter(null);
   }
   const anyFilterActive =
-    turnTypeFilter !== null || segmentoFilter !== null || confidenceFilter !== null;
+    turnTypeFilter !== null ||
+    segmentoFilter !== null ||
+    confidenceFilter !== null ||
+    dateFilter !== null;
 
   // Realtime: escuchar cambios y refrescar el loader
   useEffect(() => {
@@ -354,13 +375,17 @@ function TriagePage() {
     };
   }, [realtime, router]);
 
-  // Polling de respaldo cada 10s
+  // Polling de respaldo cada 10s. Se pausa cuando un dialog está abierto
+  // (editando / rechazando / etc.) para no interrumpir lo que está escribiendo
+  // el SDR.
+  const blockedByDialog = editOpen || confirmRejectOpen || bulkApproveOpen || bulkRejectOpen;
   useEffect(() => {
+    if (blockedByDialog) return;
     const id = setInterval(() => {
       router.invalidate();
     }, 10000);
     return () => clearInterval(id);
-  }, [router]);
+  }, [router, blockedByDialog]);
 
   const selectedIndex = useMemo(
     () => cases.findIndex((c: TriageCase) => c.id === selectedId),
@@ -642,8 +667,10 @@ function TriagePage() {
             cases={allCases as TriageCase[]}
             turnTypeFilter={turnTypeFilter}
             segmentoFilter={segmentoFilter}
+            dateFilter={dateFilter}
             onTurnTypeChange={setTurnTypeFilter}
             onSegmentoChange={setSegmentoFilter}
+            onDateChange={setDateFilter}
             anyFilterActive={anyFilterActive}
             onClearFilters={clearFilters}
           />
@@ -967,6 +994,12 @@ function CaseListItem({
             </div>
           </div>
         </div>
+        {c.turn_1_generated && (
+          <div className="mt-1.5 text-[11px] text-muted-foreground line-clamp-2 leading-snug italic">
+            <span className="not-italic opacity-60">↳ </span>
+            {previewText(c.turn_1_generated, 140)}
+          </div>
+        )}
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", conf.pillClasses)}>
             {conf.short}
@@ -976,6 +1009,12 @@ function CaseListItem({
       </div>
     </div>
   );
+}
+
+function previewText(s: string, max: number): string {
+  // Saltos de línea -> espacios, colapsa whitespace, recorta
+  const cleaned = s.replace(/\s+/g, " ").trim();
+  return cleaned.length <= max ? cleaned : cleaned.slice(0, max - 1) + "…";
 }
 
 function SlaIndicator({ cases }: { cases: TriageCase[] }) {
@@ -1079,16 +1118,20 @@ function FilterBar({
   cases,
   turnTypeFilter,
   segmentoFilter,
+  dateFilter,
   onTurnTypeChange,
   onSegmentoChange,
+  onDateChange,
   anyFilterActive,
   onClearFilters,
 }: {
   cases: TriageCase[];
   turnTypeFilter: string | null;
   segmentoFilter: string | null;
+  dateFilter: "1h" | "4h" | "24h" | "3d" | "7d" | null;
   onTurnTypeChange: (v: string | null) => void;
   onSegmentoChange: (v: string | null) => void;
+  onDateChange: (v: "1h" | "4h" | "24h" | "3d" | "7d" | null) => void;
   anyFilterActive: boolean;
   onClearFilters: () => void;
 }) {
@@ -1116,7 +1159,31 @@ function FilterBar({
     .filter(([, n]) => n > 0)
     .sort((a, b) => a[0].localeCompare(b[0]));
 
-  if (turnTypes.length <= 1 && segmentos.length <= 1 && !anyFilterActive) {
+  // Counts dinámicos para el filtro de antigüedad (sobre el dataset sin filtrar)
+  const ageCounts = useMemo(() => {
+    const now = Date.now();
+    const buckets = { "1h": 0, "4h": 0, "24h": 0, "3d": 0, "7d": 0 };
+    for (const c of cases) {
+      const ts = c.reply_timestamp ? Date.parse(c.reply_timestamp) : NaN;
+      if (Number.isNaN(ts)) continue;
+      const ageH = (now - ts) / (60 * 60 * 1000);
+      if (ageH >= 1) buckets["1h"]++;
+      if (ageH >= 4) buckets["4h"]++;
+      if (ageH >= 24) buckets["24h"]++;
+      if (ageH >= 72) buckets["3d"]++;
+      if (ageH >= 168) buckets["7d"]++;
+    }
+    return buckets;
+  }, [cases]);
+  const dateOptions: Array<{ value: "1h" | "4h" | "24h" | "3d" | "7d"; label: string }> = [
+    { value: "1h", label: ">1h" },
+    { value: "4h", label: ">4h" },
+    { value: "24h", label: ">1d" },
+    { value: "3d", label: ">3d" },
+    { value: "7d", label: ">7d" },
+  ];
+
+  if (turnTypes.length <= 1 && segmentos.length <= 1 && cases.length < 5 && !anyFilterActive) {
     return null;
   }
 
@@ -1142,6 +1209,16 @@ function FilterBar({
           onChange={onSegmentoChange}
         />
       )}
+      <FilterChipRow
+        label="Cola"
+        options={dateOptions.map((o) => ({
+          value: o.value,
+          label: o.label,
+          count: ageCounts[o.value],
+        }))}
+        activeValue={dateFilter}
+        onChange={(v) => onDateChange(v as "1h" | "4h" | "24h" | "3d" | "7d" | null)}
+      />
       {anyFilterActive && (
         <button
           type="button"
@@ -1579,6 +1656,9 @@ function EditDialog({
   const [otherChecked, setOtherChecked] = useState(false);
   const [otherText, setOtherText] = useState("");
 
+  // Solo re-inicializa cuando el dialog se ABRE o cambia el CASO (por id).
+  // No usar `caseItem` como dep porque el polling de router.invalidate()
+  // recrea el objeto cada 10s y borraría lo que el SDR esté escribiendo.
   useEffect(() => {
     if (open) {
       setText(caseItem.turn_1_generated ?? "");
@@ -1586,7 +1666,8 @@ function EditDialog({
       setOtherChecked(false);
       setOtherText("");
     }
-  }, [open, caseItem]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, caseItem.id]);
 
   const lines = text.split("\n").length;
   const chars = text.length;
