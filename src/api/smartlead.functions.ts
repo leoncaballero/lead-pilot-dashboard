@@ -115,6 +115,48 @@ export const getSmartleadThread = createServerFn({ method: "GET" })
  * Strip HTML tags + decode common entities for a clean text rendering.
  * Used when we want plain-text display of email bodies (no XSS risk).
  */
+/**
+ * Saca el texto citado de una respuesta (lo que el lead respondió encima de
+ * nuestro email previo). Detecta separadores típicos de Gmail/Outlook en
+ * español, inglés y francés. Si el stripping deja el texto vacío (caso raro:
+ * todo el cuerpo es citado), devolvemos el original.
+ *
+ * Aplicar SOLO a mensajes type=REPLY. Los SENT son nuestros, no tienen quote.
+ */
+export function stripQuotedReply(text: string): string {
+  if (!text) return text;
+  const markers: RegExp[] = [
+    // Gmail español: "El jue, 5 mar 2026, 9:25, Nombre <email> escribió:"
+    /^[ \t]*El .{0,300}?escribió:\s*$/m,
+    // Gmail inglés: "On Thu, Mar 5, 2026 at 9:25, Name <email> wrote:"
+    /^[ \t]*On .{0,300}?wrote:\s*$/m,
+    // Gmail francés
+    /^[ \t]*Le .{0,300}?a écrit\s*:\s*$/m,
+    // Outlook separator
+    /^[ \t]*-{2,}\s*Original Message\s*-{2,}.*$/im,
+    /^[ \t]*-{2,}\s*Mensaje original\s*-{2,}.*$/im,
+    // Outlook block ES
+    /^[ \t]*De:\s.+$/m,
+    // Outlook block EN
+    /^[ \t]*From:\s.+$/m,
+  ];
+  let earliestIdx = text.length;
+  for (const re of markers) {
+    const m = re.exec(text);
+    if (m && m.index < earliestIdx) earliestIdx = m.index;
+  }
+  let result = text.slice(0, earliestIdx);
+  // Quitar lineas con prefijo > (quoted lines sin header)
+  result = result
+    .split("\n")
+    .filter((line) => !/^[ \t]*>/.test(line))
+    .join("\n");
+  result = result.replace(/\n{3,}/g, "\n\n").trim();
+  // Si nos quedamos sin nada (reply era solo quote), volvemos al original
+  if (result.length === 0) return text.trim();
+  return result;
+}
+
 export function stripEmailHtml(html: string): string {
   if (!html) return "";
   let text = html
