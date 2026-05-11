@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { getSmartleadThread, stripEmailHtml, type SmartleadMessage, type SmartleadThread } from "@/api/smartlead.functions";
+import {
+  getSmartleadThread,
+  stripEmailHtml,
+  stripQuotedReply,
+  type SmartleadMessage,
+  type SmartleadThread,
+} from "@/api/smartlead.functions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -160,7 +166,12 @@ export function ConversationThread({
 function MessageBubble({ m, showRaw }: { m: SmartleadMessage; showRaw: boolean }) {
   const isFromUs = m.type === "SENT";
   const text = m.email_body ?? "";
-  const cleaned = showRaw ? text : stripEmailHtml(text);
+  const baseCleaned = showRaw ? text : stripEmailHtml(text);
+  const [showQuoted, setShowQuoted] = useState(false);
+  // Solo aplicamos el stripping del citado a REPLIES no-raw
+  const replyStripped = !isFromUs && !showRaw ? stripQuotedReply(baseCleaned) : baseCleaned;
+  const hasHiddenQuote = !isFromUs && !showRaw && replyStripped !== baseCleaned;
+  const displayed = !isFromUs && !showRaw && !showQuoted ? replyStripped : baseCleaned;
   return (
     <li
       className={cn(
@@ -203,9 +214,20 @@ function MessageBubble({ m, showRaw }: { m: SmartleadMessage; showRaw: boolean }
           dangerouslySetInnerHTML={{ __html: text }}
         />
       ) : (
-        <pre className="whitespace-pre-wrap rounded bg-background/60 p-2 font-sans text-sm leading-relaxed">
-          {cleaned}
-        </pre>
+        <>
+          <pre className="whitespace-pre-wrap rounded bg-background/60 p-2 font-sans text-sm leading-relaxed">
+            {displayed}
+          </pre>
+          {hasHiddenQuote && (
+            <button
+              type="button"
+              onClick={() => setShowQuoted((v) => !v)}
+              className="mt-1 text-[11px] underline text-muted-foreground hover:text-foreground"
+            >
+              {showQuoted ? "Ocultar texto citado" : "Mostrar texto citado"}
+            </button>
+          )}
+        </>
       )}
     </li>
   );
