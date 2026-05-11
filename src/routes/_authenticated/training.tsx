@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/Markdown";
 import {
   Dialog,
   DialogContent,
@@ -662,7 +663,7 @@ function MessageBubble({ m }: { m: TrainingMessage }) {
   return (
     <div
       className={cn(
-        "rounded-md px-3 py-2 text-sm whitespace-pre-wrap",
+        "rounded-md px-3 py-2 text-sm",
         isUser
           ? "bg-blue-50 ml-12 dark:bg-blue-950/20"
           : "bg-emerald-50/60 mr-12 dark:bg-emerald-950/20"
@@ -679,7 +680,13 @@ function MessageBubble({ m }: { m: TrainingMessage }) {
           ))}
         </div>
       )}
-      <div className="leading-relaxed">{m.content}</div>
+      {isUser ? (
+        // El usuario suele escribir texto plano — preservamos saltos pero no
+        // procesamos markdown para no romper si pega símbolos accidentales.
+        <div className="leading-relaxed whitespace-pre-wrap">{m.content}</div>
+      ) : (
+        <Markdown>{m.content}</Markdown>
+      )}
     </div>
   );
 }
@@ -881,7 +888,7 @@ function SynthDialog({
             <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">
               Razonamiento
             </div>
-            <p className="whitespace-pre-wrap">{synth.reasoning}</p>
+            <Markdown>{synth.reasoning}</Markdown>
           </div>
           <div className="rounded border bg-blue-50/40 p-3 text-sm dark:bg-blue-950/20">
             <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">

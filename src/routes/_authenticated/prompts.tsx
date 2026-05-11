@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/Markdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -1129,7 +1130,7 @@ function RefineDialog({
                 <div
                   key={i}
                   className={cn(
-                    "rounded-md px-3 py-2 text-sm whitespace-pre-wrap",
+                    "rounded-md px-3 py-2 text-sm",
                     t.role === "user"
                       ? "bg-blue-100/60 ml-6 dark:bg-blue-950/30"
                       : "bg-emerald-100/60 mr-6 dark:bg-emerald-950/30"
@@ -1138,7 +1139,11 @@ function RefineDialog({
                   <div className="text-[10px] font-semibold uppercase mb-1 opacity-70">
                     {t.role === "user" ? "Tú" : "Claude"}
                   </div>
-                  {t.content}
+                  {t.role === "user" ? (
+                    <div className="whitespace-pre-wrap">{t.content}</div>
+                  ) : (
+                    <Markdown>{t.content}</Markdown>
+                  )}
                 </div>
               ))}
               {thinking && (
