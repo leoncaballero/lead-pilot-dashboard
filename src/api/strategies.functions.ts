@@ -23,6 +23,38 @@ export type StrategyUsage = {
   pipeline_count: number;
 };
 
+export type ListStrategiesResult = {
+  strategies: Strategy[];
+  usage: StrategyUsage[];
+  /** True si detectamos que la tabla no existe (migración pendiente). */
+  needs_migration?: boolean;
+  /** True si la columna strategy_id en pipeline tampoco existe (parte 2 de la migración). */
+  pipeline_missing_column?: boolean;
+};
+
+/**
+ * Detecta si un error de pgrest viene de "tabla no existe" o "columna no existe".
+ * PostgREST devuelve 404 con código PGRST205 cuando la tabla no se encuentra en
+ * el schema cache, y 400 con 42703 cuando la columna no existe.
+ */
+function isMissingRelation(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message;
+  return (
+    m.includes("PGRST205") ||
+    m.includes("PGRST204") ||
+    m.includes("does not exist") ||
+    m.includes("42P01") || // undefined_table
+    m.includes("[404]")
+  );
+}
+
+function isMissingColumn(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message;
+  return m.includes("42703") || m.includes("PGRST204");
+}
+
 const TABLE = "cl001_p007_strategies";
 const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
 
@@ -56,14 +88,22 @@ async function pgrest(path: string, init: RequestInit & { prefer?: string } = {}
 }
 
 export const listStrategies = createServerFn({ method: "GET" }).handler(
-  async (): Promise<{ strategies: Strategy[]; usage: StrategyUsage[] }> => {
+  async (): Promise<ListStrategiesResult> => {
     const params = new URLSearchParams({
       select: "*",
       order: "segmento.asc,is_active.desc,created_at.desc",
     });
-    const strategies = ((await pgrest(`${TABLE}?${params.toString()}`, {
-      method: "GET",
-    })) ?? []) as Strategy[];
+    let strategies: Strategy[] = [];
+    try {
+      strategies = ((await pgrest(`${TABLE}?${params.toString()}`, {
+        method: "GET",
+      })) ?? []) as Strategy[];
+    } catch (err) {
+      if (isMissingRelation(err)) {
+        return { strategies: [], usage: [], needs_migration: true };
+      }
+      throw err;
+    }
 
     // Conteo de leads por strategy_id (mejor esfuerzo en cliente)
     if (strategies.length === 0) return { strategies, usage: [] };
@@ -74,9 +114,21 @@ export const listStrategies = createServerFn({ method: "GET" }).handler(
     });
     usageParams.append("strategy_id", `in.(${idsList})`);
     type UR = { strategy_id: string };
-    const usageRows = ((await pgrest(`${PIPELINE_TABLE}?${usageParams.toString()}`, {
-      method: "GET",
-    })) ?? []) as UR[];
+    let usageRows: UR[] = [];
+    let pipelineMissingColumn = false;
+    try {
+      usageRows = ((await pgrest(`${PIPELINE_TABLE}?${usageParams.toString()}`, {
+        method: "GET",
+      })) ?? []) as UR[];
+    } catch (err) {
+      if (isMissingColumn(err)) {
+        // La tabla strategies existe pero pipeline aún no tiene la columna strategy_id.
+        // Devolvemos las strategies con usage en 0 para que la UI funcione.
+        pipelineMissingColumn = true;
+      } else {
+        throw err;
+      }
+    }
     const counts = new Map<string, number>();
     for (const r of usageRows) {
       counts.set(r.strategy_id, (counts.get(r.strategy_id) ?? 0) + 1);
@@ -85,7 +137,11 @@ export const listStrategies = createServerFn({ method: "GET" }).handler(
       strategy_id: s.id,
       pipeline_count: counts.get(s.id) ?? 0,
     }));
-    return { strategies, usage };
+    return {
+      strategies,
+      usage,
+      pipeline_missing_column: pipelineMissingColumn || undefined,
+    };
   }
 );
 
