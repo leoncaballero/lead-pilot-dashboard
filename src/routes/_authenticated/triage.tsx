@@ -40,6 +40,7 @@ import {
 } from "@/api/triage.functions";
 import { ConversationThread } from "@/components/ConversationThread";
 import { getHubSpotLastContactedBatch } from "@/api/hubspot.functions";
+import { stripQuotedReply } from "@/api/smartlead.functions";
 import { HubSpotLeadContextCard } from "@/components/HubSpotLeadContext";
 
 export const Route = createFileRoute("/_authenticated/triage")({
@@ -1087,10 +1088,10 @@ function CaseListItem({
             </div>
           </div>
         </div>
-        {c.turn_1_generated && (
+        {c.reply_original && (
           <div className="mt-1.5 text-[11px] text-muted-foreground line-clamp-2 leading-snug italic">
-            <span className="not-italic opacity-60">↳ </span>
-            {previewText(c.turn_1_generated, 140)}
+            <span className="not-italic opacity-60">↩ </span>
+            {previewText(stripQuotedReply(c.reply_original), 140)}
           </div>
         )}
         <div className="mt-2 flex items-center justify-between gap-2">
