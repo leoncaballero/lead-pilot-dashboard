@@ -206,14 +206,53 @@ function StrategiesPage() {
         </div>
       )}
 
-      {data.strategies.length === 0 && (
-        <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground space-y-2">
-          <p>No hay estrategias todavía. Ejecuta la migración SQL primero:</p>
-          <code className="text-xs">outbound-migrations/20260507_002_strategies.sql</code>
+      {data.needs_migration && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50/60 p-6 space-y-3 dark:border-amber-800 dark:bg-amber-950/30">
+          <h2 className="text-base font-semibold text-amber-900 dark:text-amber-200">
+            ⚠️ Migración SQL pendiente
+          </h2>
+          <p className="text-sm text-amber-900/80 dark:text-amber-200/80">
+            La tabla <code className="text-xs">cl001_p007_strategies</code> todavía no existe en
+            Supabase OUTBOUND. Para activar esta sección:
+          </p>
+          <ol className="list-decimal list-inside text-sm space-y-1 text-amber-900/80 dark:text-amber-200/80">
+            <li>Abre el SQL Editor de Supabase OUTBOUND (mazhrnqztnjvppgbltuq)</li>
+            <li>
+              Ejecuta el contenido de{" "}
+              <code className="text-xs rounded bg-amber-100 px-1 py-0.5 dark:bg-amber-900/40">
+                outbound-migrations/20260507_002_strategies.sql
+              </code>
+            </li>
+            <li>Recarga esta página</li>
+          </ol>
+          <p className="text-xs text-amber-900/60 dark:text-amber-200/60 italic">
+            La migración crea la tabla + añade la columna <code>strategy_id</code> a pipeline y
+            siembra una estrategia "Default 4h/24h/3d" activa por cada segmento.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.invalidate()}
+            className="text-sm underline text-amber-900 hover:text-amber-700 dark:text-amber-200"
+          >
+            Reintentar
+          </button>
         </div>
       )}
 
-      {SEGMENTOS.map((seg) => {
+      {data.pipeline_missing_column && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          La tabla strategies existe pero la columna <code>strategy_id</code> en pipeline aún no.
+          Los conteos de leads aparecerán como 0 hasta que ejecutes la parte 2 de la migración.
+        </div>
+      )}
+
+      {data.strategies.length === 0 && !data.needs_migration && (
+        <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground space-y-2">
+          <p>No hay estrategias creadas todavía. Crea la primera para un segmento.</p>
+        </div>
+      )}
+
+      {!data.needs_migration && SEGMENTOS.map((seg) => {
         const strategies = bySegment.get(seg) ?? [];
         return (
           <div key={seg} className="space-y-2">
