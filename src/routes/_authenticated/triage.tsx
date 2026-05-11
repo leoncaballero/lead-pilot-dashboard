@@ -32,12 +32,14 @@ import {
   editCase,
   getRealtimeConfig,
   getTriageCases,
+  regenerateCase,
   rejectCase,
   undoSdrAction,
   type ClassificationOutput,
   type TriageCase,
 } from "@/api/triage.functions";
 import { ConversationThread } from "@/components/ConversationThread";
+import { getHubSpotLastContactedBatch } from "@/api/hubspot.functions";
 import { HubSpotLeadContextCard } from "@/components/HubSpotLeadContext";
 
 export const Route = createFileRoute("/_authenticated/triage")({
@@ -281,6 +283,47 @@ function TriagePage() {
   type DateFilterKey = "1h" | "4h" | "24h" | "3d" | "7d" | null;
   const [dateFilter, setDateFilter] = useState<DateFilterKey>(null);
 
+  // Filtro "sin contacto >Nd" basado en HubSpot notes_last_contacted.
+  // Fetch lazy en background al montar — si falla, el filtro queda inerte.
+  type StaleFilterKey = "7d" | "14d" | "30d" | "60d" | null;
+  const [staleFilter, setStaleFilter] = useState<StaleFilterKey>(null);
+  const [lastContactedMap, setLastContactedMap] = useState<Record<
+    string,
+    string | null
+  > | null>(null);
+  const hubspotBatchFn = useServerFn(getHubSpotLastContactedBatch);
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(
+        (allCases as TriageCase[])
+          .map((c) => c.hubspot_contact_id)
+          .filter((x): x is string => !!x && x !== "null")
+      )
+    );
+    if (ids.length === 0) {
+      setLastContactedMap({});
+      return;
+    }
+    let cancelled = false;
+    hubspotBatchFn({ data: { contact_ids: ids } })
+      .then((res) => {
+        if (cancelled) return;
+        const flat: Record<string, string | null> = {};
+        for (const [id, v] of Object.entries(res.map)) {
+          flat[id] = v.notes_last_contacted ?? v.notes_last_updated ?? null;
+        }
+        setLastContactedMap(flat);
+      })
+      .catch(() => {
+        if (!cancelled) setLastContactedMap({});
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Solo correr cuando cambia el set de ids (no cuando cambia ref por polling)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(allCases as TriageCase[]).map((c) => c.hubspot_contact_id).filter(Boolean).join(",")]);
+
   const cases = useMemo(() => {
     const now = Date.now();
     const thresholds: Record<Exclude<DateFilterKey, null>, number> = {
@@ -289,6 +332,12 @@ function TriagePage() {
       "24h": 24 * 60 * 60 * 1000,
       "3d": 3 * 24 * 60 * 60 * 1000,
       "7d": 7 * 24 * 60 * 60 * 1000,
+    };
+    const staleThresholds: Record<Exclude<StaleFilterKey, null>, number> = {
+      "7d": 7 * 24 * 60 * 60 * 1000,
+      "14d": 14 * 24 * 60 * 60 * 1000,
+      "30d": 30 * 24 * 60 * 60 * 1000,
+      "60d": 60 * 24 * 60 * 60 * 1000,
     };
     return (allCases as TriageCase[]).filter((c) => {
       if (turnTypeFilter && (c.turn_type ?? "turn1") !== turnTypeFilter)
@@ -302,9 +351,28 @@ function TriagePage() {
         const age = now - ts;
         if (age < thresholds[dateFilter]) return false;
       }
+      if (staleFilter && lastContactedMap) {
+        const cid = c.hubspot_contact_id;
+        if (!cid) return false;
+        const lastIso = lastContactedMap[cid];
+        // Si nunca se ha contactado, lo consideramos "stale" infinito → pasa el filtro
+        if (lastIso === null || lastIso === undefined) return true;
+        const ts = Date.parse(lastIso);
+        if (Number.isNaN(ts)) return true;
+        const since = now - ts;
+        if (since < staleThresholds[staleFilter]) return false;
+      }
       return true;
     });
-  }, [allCases, turnTypeFilter, segmentoFilter, confidenceFilter, dateFilter]);
+  }, [
+    allCases,
+    turnTypeFilter,
+    segmentoFilter,
+    confidenceFilter,
+    dateFilter,
+    staleFilter,
+    lastContactedMap,
+  ]);
 
   const [selectedId, setSelectedId] = useState<string | null>(
     cases[0]?.id ?? null
@@ -315,6 +383,24 @@ function TriagePage() {
   const deepFn = useServerFn(deepReviewCase);
   const undoFn = useServerFn(undoSdrAction);
   const editFn = useServerFn(editCase);
+  const regenFn = useServerFn(regenerateCase);
+  const [regenerating, setRegenerating] = useState<string | null>(null);
+
+  async function handleRegenerate(caseId: string) {
+    setRegenerating(caseId);
+    try {
+      const res = await regenFn({ data: { id: caseId } });
+      if (!res.ok) {
+        alert(`Regenerar falló: ${res.error}`);
+      } else {
+        await router.invalidate();
+      }
+    } catch (e) {
+      alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRegenerating(null);
+    }
+  }
 
   // Mantener selección válida cuando la lista cambia (por filtro o realtime)
   useEffect(() => {
@@ -332,12 +418,14 @@ function TriagePage() {
     setSegmentoFilter(null);
     setConfidenceFilter(null);
     setDateFilter(null);
+    setStaleFilter(null);
   }
   const anyFilterActive =
     turnTypeFilter !== null ||
     segmentoFilter !== null ||
     confidenceFilter !== null ||
-    dateFilter !== null;
+    dateFilter !== null ||
+    staleFilter !== null;
 
   // Realtime: escuchar cambios y refrescar el loader
   useEffect(() => {
@@ -668,9 +756,12 @@ function TriagePage() {
             turnTypeFilter={turnTypeFilter}
             segmentoFilter={segmentoFilter}
             dateFilter={dateFilter}
+            staleFilter={staleFilter}
+            lastContactedMap={lastContactedMap}
             onTurnTypeChange={setTurnTypeFilter}
             onSegmentoChange={setSegmentoFilter}
             onDateChange={setDateFilter}
+            onStaleChange={setStaleFilter}
             anyFilterActive={anyFilterActive}
             onClearFilters={clearFilters}
           />
@@ -701,6 +792,8 @@ function TriagePage() {
                   case={selected}
                   index={selectedIndex}
                   total={cases.length}
+                  onRegenerate={() => handleRegenerate(selected.id)}
+                  regenerating={regenerating === selected.id}
                 />
               </div>
               <ActionsFooter
@@ -1119,9 +1212,12 @@ function FilterBar({
   turnTypeFilter,
   segmentoFilter,
   dateFilter,
+  staleFilter,
+  lastContactedMap,
   onTurnTypeChange,
   onSegmentoChange,
   onDateChange,
+  onStaleChange,
   anyFilterActive,
   onClearFilters,
 }: {
@@ -1129,9 +1225,12 @@ function FilterBar({
   turnTypeFilter: string | null;
   segmentoFilter: string | null;
   dateFilter: "1h" | "4h" | "24h" | "3d" | "7d" | null;
+  staleFilter: "7d" | "14d" | "30d" | "60d" | null;
+  lastContactedMap: Record<string, string | null> | null;
   onTurnTypeChange: (v: string | null) => void;
   onSegmentoChange: (v: string | null) => void;
   onDateChange: (v: "1h" | "4h" | "24h" | "3d" | "7d" | null) => void;
+  onStaleChange: (v: "7d" | "14d" | "30d" | "60d" | null) => void;
   anyFilterActive: boolean;
   onClearFilters: () => void;
 }) {
@@ -1219,6 +1318,48 @@ function FilterBar({
         activeValue={dateFilter}
         onChange={(v) => onDateChange(v as "1h" | "4h" | "24h" | "3d" | "7d" | null)}
       />
+      {lastContactedMap !== null && (() => {
+        const now = Date.now();
+        const buckets = { "7d": 0, "14d": 0, "30d": 0, "60d": 0 };
+        for (const c of cases) {
+          const cid = c.hubspot_contact_id;
+          if (!cid) continue;
+          const iso = lastContactedMap[cid];
+          if (iso === undefined) continue;
+          if (iso === null) {
+            buckets["7d"]++;
+            buckets["14d"]++;
+            buckets["30d"]++;
+            buckets["60d"]++;
+            continue;
+          }
+          const sinceDays = (now - Date.parse(iso)) / (24 * 60 * 60 * 1000);
+          if (sinceDays >= 7) buckets["7d"]++;
+          if (sinceDays >= 14) buckets["14d"]++;
+          if (sinceDays >= 30) buckets["30d"]++;
+          if (sinceDays >= 60) buckets["60d"]++;
+        }
+        const has = Object.values(lastContactedMap).length > 0;
+        if (!has) return null;
+        const staleOptions: Array<{ value: "7d" | "14d" | "30d" | "60d"; label: string }> = [
+          { value: "7d", label: ">7d sin contacto" },
+          { value: "14d", label: ">14d" },
+          { value: "30d", label: ">30d" },
+          { value: "60d", label: ">60d" },
+        ];
+        return (
+          <FilterChipRow
+            label="HS"
+            options={staleOptions.map((o) => ({
+              value: o.value,
+              label: o.label,
+              count: buckets[o.value],
+            }))}
+            activeValue={staleFilter}
+            onChange={(v) => onStaleChange(v as "7d" | "14d" | "30d" | "60d" | null)}
+          />
+        );
+      })()}
       {anyFilterActive && (
         <button
           type="button"
@@ -1279,10 +1420,14 @@ function CaseDetail({
   case: c,
   index,
   total,
+  onRegenerate,
+  regenerating,
 }: {
   case: TriageCase;
   index: number;
   total: number;
+  onRegenerate: () => void;
+  regenerating: boolean;
 }) {
   const min = minutesSince(c.reply_timestamp);
   const cls = c.classification_output ?? {};
@@ -1375,10 +1520,26 @@ function CaseDetail({
 
           {/* Turn 1: lo más importante, primero, en font sans para lectura natural */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-medium uppercase text-muted-foreground">
-                Respuesta propuesta
-              </h3>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-medium uppercase text-muted-foreground">
+                  Respuesta propuesta
+                </h3>
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  disabled={regenerating}
+                  className={cn(
+                    "rounded-md border px-2 py-0.5 text-[11px] transition-colors flex items-center gap-1",
+                    regenerating
+                      ? "border-muted bg-muted/40 text-muted-foreground cursor-wait"
+                      : "border-foreground/20 hover:bg-accent text-foreground"
+                  )}
+                  title="Vuelve a clasificar + generar + validar usando los prompts actualmente activos. Útil si has editado un prompt y quieres ver la nueva salida."
+                >
+                  {regenerating ? "🔄 Regenerando…" : "🔄 Regenerar con IA"}
+                </button>
+              </div>
               <ScoreCompact
                 score={c.score}
                 checksPasados={checksPasados}

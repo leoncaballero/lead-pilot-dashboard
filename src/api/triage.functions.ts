@@ -314,3 +314,241 @@ export const editCase = createServerFn({ method: "POST" })
     await triggerSendWebhook(data.id);
     return { ok: true };
   });
+
+/**
+ * Regenerar la respuesta de un caso con los prompts actualmente activos.
+ *
+ * Útil cuando editas un prompt en /prompts (nueva versión activa) y quieres
+ * ver cómo respondería la IA AHORA para un caso ya clasificado con la versión
+ * anterior, sin esperar a que entre un lead nuevo.
+ *
+ * Flujo:
+ * 1. Carga el caso existente
+ * 2. Carga prompts activos para (segmento, turn_type) — fallback a MEGA si no
+ *    hay segment-specific
+ * 3. Llama Anthropic 3 veces (serie): classifier → generator → validator
+ * 4. UPDATE de la fila con nuevos outputs. Status vuelve a 'pending_review'
+ *    y sdr_action a null (sin auto-send, requiere revisión humana otra vez)
+ * 5. Loguea 'turn_1_regenerated' en activity_events
+ */
+export const regenerateCase = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+    }> => {
+      const anthKey = process.env.ANTHROPIC_API_KEY;
+      if (!anthKey) return { ok: false, error: "ANTHROPIC_API_KEY no configurado" };
+
+      const cParams = new URLSearchParams({
+        id: `eq.${data.id}`,
+        select: "*",
+        limit: "1",
+      });
+      const cases = (await pgrest(`${TABLE}?${cParams.toString()}`, {
+        method: "GET",
+      })) as TriageCase[];
+      if (!cases || cases.length === 0) {
+        return { ok: false, error: "Caso no encontrado" };
+      }
+      const caseRow = cases[0];
+      const segmento = caseRow.segmento ?? "MEGA";
+      const turnType = caseRow.turn_type ?? "turn1";
+      if (!caseRow.reply_original) {
+        return { ok: false, error: "El caso no tiene reply_original — no se puede regenerar" };
+      }
+
+      const PROMPTS_TABLE = "cl001_p007_prompt_versions";
+      type PromptRow = {
+        id: string;
+        prompt_type: string;
+        segmento: string;
+        prompt_system: string;
+        model: string;
+        temperature: number | null;
+        max_tokens: number | null;
+        version: string;
+      };
+      const pParams = new URLSearchParams({
+        turn_type: `eq.${turnType}`,
+        is_active: "eq.true",
+        segmento: `in.(${segmento},MEGA)`,
+        select:
+          "id,prompt_type,segmento,prompt_system,model,temperature,max_tokens,version",
+      });
+      const prompts = ((await pgrest(`${PROMPTS_TABLE}?${pParams.toString()}`, {
+        method: "GET",
+      })) ?? []) as PromptRow[];
+      function pick(type: "classifier" | "generator" | "validator"): PromptRow | null {
+        const candidates = prompts.filter((p) => p.prompt_type === type);
+        return (
+          candidates.find((p) => p.segmento === segmento) ??
+          candidates.find((p) => p.segmento === "MEGA") ??
+          null
+        );
+      }
+      const clsP = pick("classifier");
+      const genP = pick("generator");
+      const valP = pick("validator");
+      if (!clsP || !genP || !valP) {
+        return {
+          ok: false,
+          error: `Faltan prompts activos: classifier=${!!clsP}, generator=${!!genP}, validator=${!!valP} para turn_type=${turnType}`,
+        };
+      }
+
+      // 1) Classifier
+      const classifierUserMsg =
+        `Asunto del hilo: "(no disponible en regenerate manual)"\n\n` +
+        `Respuesta del lead:\n"""\n${caseRow.reply_original}\n"""`;
+      const clsResp = await callAnthropic(anthKey, clsP, classifierUserMsg);
+      if (!clsResp.ok) return { ok: false, error: `Classifier: ${clsResp.error}` };
+      const classification = parseJsonish(clsResp.text);
+      if (!classification) {
+        return {
+          ok: false,
+          error: `Classifier devolvió texto no parseable como JSON: ${clsResp.text.slice(0, 200)}`,
+        };
+      }
+
+      // 2) Generator
+      const generatorUserMsg =
+        `Datos del lead:\n- nombre: ${caseRow.lead_name ?? "Lead"}\n- email: ${
+          caseRow.lead_email ?? "?"
+        }\n- segmento: ${segmento}\n- setter: Laura\n\n` +
+        `Reply original del lead:\n"""\n${caseRow.reply_original}\n"""\n\n` +
+        `Output del clasificador:\n${JSON.stringify(classification, null, 2)}`;
+      const genResp = await callAnthropic(anthKey, genP, generatorUserMsg);
+      if (!genResp.ok) return { ok: false, error: `Generator: ${genResp.error}` };
+      let turnGenerated: string;
+      const genParsed = parseJsonish(genResp.text);
+      if (genParsed && typeof genParsed.turn_1 === "string") {
+        turnGenerated = genParsed.turn_1 as string;
+      } else if (genParsed && typeof genParsed.turn_2 === "string") {
+        turnGenerated = genParsed.turn_2 as string;
+      } else if (
+        genParsed &&
+        typeof (genParsed as Record<string, unknown>).respuesta === "string"
+      ) {
+        turnGenerated = (genParsed as Record<string, unknown>).respuesta as string;
+      } else {
+        turnGenerated = genResp.text.trim();
+      }
+
+      // 3) Validator
+      const validatorUserMsg =
+        `Datos del lead:\n- nombre: ${caseRow.lead_name ?? "Lead"}\n- segmento: ${segmento}\n\n` +
+        `Output del clasificador:\n${JSON.stringify(classification, null, 2)}\n\n` +
+        `Output del generador (turn_1):\n"""\n${turnGenerated}\n"""`;
+      const valResp = await callAnthropic(anthKey, valP, validatorUserMsg);
+      if (!valResp.ok) return { ok: false, error: `Validator: ${valResp.error}` };
+      const validation = parseJsonish(valResp.text);
+      if (!validation) {
+        return {
+          ok: false,
+          error: `Validator devolvió texto no parseable: ${valResp.text.slice(0, 200)}`,
+        };
+      }
+
+      const patch = {
+        classification_output: classification,
+        patron: (classification as Record<string, unknown>).patron ?? null,
+        turn_1_generated: turnGenerated,
+        validation_output: validation,
+        score: (validation as Record<string, unknown>).score ?? null,
+        validado: (validation as Record<string, unknown>).validado ?? null,
+        errores_criticos:
+          (validation as Record<string, unknown>).errores_criticos ?? [],
+        razones_fallo: (validation as Record<string, unknown>).razones_fallo ?? [],
+        status: "pending_review",
+        sdr_action: null,
+      };
+      await pgrest(`${TABLE}?id=eq.${encodeURIComponent(data.id)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: JSON.stringify(patch),
+      });
+
+      await logEvent(data.id, "turn_1_regenerated", {
+        classifier_version: clsP.version,
+        generator_version: genP.version,
+        validator_version: valP.version,
+      });
+
+      return { ok: true };
+    }
+  );
+
+async function callAnthropic(
+  apiKey: string,
+  prompt: {
+    prompt_system: string;
+    model: string;
+    temperature: number | null;
+    max_tokens: number | null;
+  },
+  userMessage: string
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const includeTemp = !prompt.model.toLowerCase().includes("opus");
+  const body: Record<string, unknown> = {
+    model: prompt.model,
+    max_tokens: prompt.max_tokens ?? 2048,
+    system: prompt.prompt_system,
+    messages: [{ role: "user", content: userMessage }],
+  };
+  if (includeTemp && typeof prompt.temperature === "number") {
+    body.temperature = prompt.temperature;
+  }
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      return { ok: false, error: `Anthropic ${resp.status}: ${t.slice(0, 200)}` };
+    }
+    const json = (await resp.json()) as { content?: Array<{ text?: string }> };
+    return { ok: true, text: json.content?.[0]?.text ?? "" };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function parseJsonish(text: string): Record<string, unknown> | null {
+  if (!text) return null;
+  const t = text.trim();
+  if (t.startsWith("{")) {
+    try {
+      return JSON.parse(t);
+    } catch {
+      /* sigue */
+    }
+  }
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {
+      /* sigue */
+    }
+  }
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first !== -1 && last > first) {
+    try {
+      return JSON.parse(t.slice(first, last + 1));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
