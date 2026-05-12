@@ -59,6 +59,11 @@ export type TriageCase = {
   setter_name?: string | null;
   lead_resolved_name?: string | null;
   has_known_store?: boolean | null;
+  /** Outcome a nivel de lead (no de pipeline row). Enriquecido en getTriageCases.
+   *  Valores: booked, closed_won, closed_lost, attended, no_show, unsubscribe, null.
+   *  Cuando un lead tiene varios outcomes, prevalece el más informativo
+   *  (closed_won > closed_lost > attended > no_show > booked > unsubscribe). */
+  lead_outcome?: string | null;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
@@ -145,12 +150,80 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
       status: "eq.pending_review",
       order: "created_at.desc.nullslast",
     });
-    const data = (await pgrest(`${TABLE}?${params.toString()}`, {
+    const data = ((await pgrest(`${TABLE}?${params.toString()}`, {
       method: "GET",
-    })) as TriageCase[];
-    return { cases: data ?? [] };
+    })) ?? []) as TriageCase[];
+
+    // Enriquecer con outcome a nivel de LEAD (no de pipeline row):
+    // Un lead se considera booked / won / lost si CUALQUIERA de sus filas
+    // de pipeline (Turn 1, Turn 2, FU, etc.) tiene ese outcome registrado.
+    // Importante: el outcome aquí refleja el ESTADO ACTUAL del lead, no
+    // necesariamente del row mostrado en /triage.
+    const emails = Array.from(
+      new Set(
+        data
+          .map((c) => c.lead_email)
+          .filter((x): x is string => !!x && x.length > 0)
+      )
+    );
+    const leadOutcomes = new Map<string, string>();
+    if (emails.length > 0) {
+      // Chunk para evitar URLs gigantes
+      const chunks: string[][] = [];
+      for (let i = 0; i < emails.length; i += 80) chunks.push(emails.slice(i, i + 80));
+      for (const chunk of chunks) {
+        const idsList = chunk.map((e) => `"${e}"`).join(",");
+        const opParams = new URLSearchParams({
+          select:
+            "outcome,occurred_at,cl001_p007_turn1_pipeline!inner(lead_email)",
+          outcome: "in.(booked,closed_won,closed_lost,attended,no_show,unsubscribe)",
+          order: "occurred_at.desc",
+          limit: "1000",
+        });
+        opParams.append("cl001_p007_turn1_pipeline.lead_email", `in.(${idsList})`);
+        try {
+          type Row = {
+            outcome: string;
+            occurred_at: string;
+            cl001_p007_turn1_pipeline: { lead_email: string } | null;
+          };
+          const rows = ((await pgrest(`${OUTCOMES_TABLE_FOR_TRIAGE}?${opParams.toString()}`, {
+            method: "GET",
+          })) ?? []) as Row[];
+          // Prioridad: closed_won > closed_lost > attended > no_show > booked > unsubscribe
+          // (queremos quedarnos con el más informativo si hay varios por lead)
+          const priority: Record<string, number> = {
+            closed_won: 6,
+            closed_lost: 5,
+            attended: 4,
+            no_show: 3,
+            booked: 2,
+            unsubscribe: 1,
+          };
+          for (const r of rows) {
+            const em = r.cl001_p007_turn1_pipeline?.lead_email;
+            if (!em) continue;
+            const prev = leadOutcomes.get(em);
+            if (!prev || (priority[r.outcome] ?? 0) > (priority[prev] ?? 0)) {
+              leadOutcomes.set(em, r.outcome);
+            }
+          }
+        } catch (e) {
+          // Si falla la enriquecimiento no rompe el endpoint
+          console.error("triage outcomes enrichment failed:", e);
+        }
+      }
+    }
+    for (const c of data) {
+      if (c.lead_email && leadOutcomes.has(c.lead_email)) {
+        c.lead_outcome = leadOutcomes.get(c.lead_email) ?? null;
+      }
+    }
+    return { cases: data };
   }
 );
+
+const OUTCOMES_TABLE_FOR_TRIAGE = "cl001_p007_outcomes";
 
 export const getRealtimeConfig = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ url: string; anonKey: string } | null> => {
