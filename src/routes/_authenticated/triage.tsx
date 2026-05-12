@@ -195,6 +195,52 @@ function aiWouldAutoApprove(c: TriageCase): boolean {
 }
 
 /**
+ * Tier de confianza para scanning visual rápido en el triage:
+ * - 'auto'   → score ≥ 95 sin críticos. Listo para auto-send si flag activo.
+ * - 'margin' → score 85-94 sin críticos. Revisión rápida, sin alarmas.
+ * - 'low'    → score < 85 sin críticos. Requiere atención.
+ * - 'critical' → al menos 1 error crítico. Revisión profunda obligatoria.
+ */
+type AiTier = "auto" | "margin" | "low" | "critical";
+function aiConfidenceTier(c: TriageCase): AiTier {
+  const score = typeof c.score === "number" ? c.score : 0;
+  const criticos = c.errores_criticos?.length ?? 0;
+  if (criticos >= 1) return "critical";
+  if (score >= 95) return "auto";
+  if (score >= 85) return "margin";
+  return "low";
+}
+
+/**
+ * Severidad SLA escalada:
+ *  - normal    : ≤ 1h. Estado saludable.
+ *  - slow      : 1-4h. Aviso suave (borde tenue).
+ *  - urgent    : 4-24h. Borde ámbar + chip URGENTE.
+ *  - critical  : > 24h. Borde rojo + chip RIESGO.
+ */
+type SlaSev = "normal" | "slow" | "urgent" | "critical";
+function slaSeverity(min: number | null): SlaSev {
+  if (min === null) return "normal";
+  if (min > 60 * 24) return "critical";
+  if (min > 60 * 4) return "urgent";
+  if (min > 60) return "slow";
+  return "normal";
+}
+
+function slaBorderClass(sev: SlaSev): string {
+  switch (sev) {
+    case "critical":
+      return "border-red-500 dark:border-red-700 border-2";
+    case "urgent":
+      return "border-amber-500 dark:border-amber-600 border-2";
+    case "slow":
+      return "border-amber-300/60 dark:border-amber-800/40";
+    default:
+      return "";
+  }
+}
+
+/**
  * Detecta el bug en el que el Validador devuelve score alto pero el Generador
  * no produjo turn_1_generated (output vacio o falló parsing). Probable causa:
  * Generador devolvió JSON malformado y safeParseJson cayó al fallback {}.
@@ -1064,13 +1110,16 @@ function CaseListItem({
 }) {
   const min = minutesSince(c.reply_timestamp);
   const conf = confidenceLevel(c);
-  const aiAuto = aiWouldAutoApprove(c);
+  const tier = aiConfidenceTier(c);
+  const sla = slaSeverity(min);
   const missingTurn1 = hasMissingTurn1Bug(c);
   return (
     <div
       className={cn(
         "flex gap-2 w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50 cursor-pointer",
         conf.borderClasses,
+        // SLA prima sobre confidence cuando es urgent/critical (más importante actuar rápido)
+        slaBorderClass(sla),
         active && "border-primary bg-accent"
       )}
       onClick={onClick}
@@ -1088,13 +1137,37 @@ function CaseListItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              {aiAuto && !missingTurn1 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {tier === "auto" && !missingTurn1 && (
                 <span
-                  className="inline-flex items-center justify-center rounded-sm bg-emerald-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                  title="IA habría aprobado y enviado sin revisión humana (score≥95, sin críticos)"
+                  className="inline-flex items-center gap-0.5 rounded-sm bg-emerald-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                  title="🟢 AUTO — score ≥95 sin críticos. Cumple criterio auto-send."
                 >
-                  AI
+                  🟢 AUTO
+                </span>
+              )}
+              {tier === "margin" && !missingTurn1 && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-sm bg-amber-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                  title="🟡 MARGIN — score 85-94. Validación pasa pero merece vistazo rápido."
+                >
+                  🟡 MARGIN
+                </span>
+              )}
+              {sla === "urgent" && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-sm bg-amber-500 px-1.5 py-0 text-[9px] font-bold uppercase leading-none text-white"
+                  title="Caso lleva más de 4h en cola — atender pronto"
+                >
+                  ⚠ URGENTE
+                </span>
+              )}
+              {sla === "critical" && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-sm bg-red-600 px-1.5 py-0 text-[9px] font-bold uppercase leading-none text-white"
+                  title="Caso lleva más de 24h en cola — RIESGO de perder al lead"
+                >
+                  🔥 RIESGO
                 </span>
               )}
               {c.has_known_store === false && (
@@ -1823,7 +1896,8 @@ function CaseDetail({
   const hasRazonesFallo = (c.razones_fallo?.length ?? 0) > 0;
   const hasChecksDetail = checks && Object.keys(checks).length > 0;
   const hasValidationDetail = hasRazonesFallo || hasChecksDetail || comentariosValidador;
-  const aiAuto = aiWouldAutoApprove(c);
+  const tier = aiConfidenceTier(c);
+  const sla = slaSeverity(min);
   const missingTurn1 = hasMissingTurn1Bug(c);
 
   return (
@@ -1846,12 +1920,36 @@ function CaseDetail({
               Patrón {c.patron}
             </Badge>
           )}
-          {aiAuto && !missingTurn1 && (
+          {tier === "auto" && !missingTurn1 && (
             <span
               className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-              title="IA habría aprobado y enviado sola (score≥95, sin errores críticos)"
+              title="🟢 AUTO — score ≥95 sin críticos. Cumple criterio auto-send."
             >
-              IA auto
+              🟢 Auto
+            </span>
+          )}
+          {tier === "margin" && !missingTurn1 && (
+            <span
+              className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+              title="🟡 MARGIN — score 85-94. Validación pasa pero merece vistazo rápido."
+            >
+              🟡 Margin
+            </span>
+          )}
+          {sla === "urgent" && (
+            <span
+              className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white"
+              title="Caso lleva más de 4h en cola"
+            >
+              ⚠ Urgente
+            </span>
+          )}
+          {sla === "critical" && (
+            <span
+              className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white"
+              title="Caso lleva más de 24h en cola — RIESGO de perder al lead"
+            >
+              🔥 Riesgo
             </span>
           )}
           <span className="ml-auto flex items-center gap-2">
