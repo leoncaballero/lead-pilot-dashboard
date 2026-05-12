@@ -778,8 +778,17 @@ async function toolGetCaseFullContext(
           `https://server.smartlead.ai/api/v1/leads/${caseRow.smartlead_lead_id}/campaigns?api_key=${smKey}`
         );
         if (campResp.ok) {
-          const camps = (await campResp.json()) as Array<{ campaign_id?: number }>;
-          const cid = camps?.[0]?.campaign_id;
+          // El endpoint /leads/{id}/campaigns devuelve [{id, status, name}]
+          // (el campaign id está en `id`, NO en `campaign_id`).
+          // Si el lead está en varias campañas, preferimos la ACTIVE; si no hay
+          // ACTIVE caemos a la primera disponible.
+          const camps = (await campResp.json()) as Array<{
+            id?: number;
+            status?: string;
+            name?: string;
+          }>;
+          const activeCamp = camps?.find((c) => c.status === "ACTIVE");
+          const cid = activeCamp?.id ?? camps?.[0]?.id;
           if (cid) {
             const histResp = await fetch(
               `https://server.smartlead.ai/api/v1/campaigns/${cid}/leads/${caseRow.smartlead_lead_id}/message-history?api_key=${smKey}`
@@ -804,7 +813,7 @@ async function toolGetCaseFullContext(
               errors.push(`Smartlead message-history ${histResp.status}`);
             }
           } else {
-            errors.push("Smartlead lead sin campaign_id");
+            errors.push("Smartlead lead sin campañas asociadas");
           }
         } else {
           errors.push(`Smartlead /campaigns ${campResp.status}`);
