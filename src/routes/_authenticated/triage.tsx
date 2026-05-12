@@ -30,11 +30,13 @@ import {
   approveCase,
   deepReviewCase,
   editCase,
+  getCanaryMetrics,
   getRealtimeConfig,
   getTriageCases,
   regenerateCase,
   rejectCase,
   undoSdrAction,
+  type CanaryMetrics,
   type ClassificationOutput,
   type TriageCase,
 } from "@/api/triage.functions";
@@ -284,6 +286,10 @@ function TriagePage() {
   type DateFilterKey = "1h" | "4h" | "24h" | "3d" | "7d" | null;
   const [dateFilter, setDateFilter] = useState<DateFilterKey>(null);
 
+  // Filtro por subgroup (MEGA bifurcado por has_known_store)
+  type SubgroupFilterKey = "no_store" | "has_store" | "default_unknown" | null;
+  const [subgroupFilter, setSubgroupFilter] = useState<SubgroupFilterKey>(null);
+
   // Filtro "sin contacto >Nd" basado en HubSpot notes_last_contacted.
   // Fetch lazy en background al montar — si falla, el filtro queda inerte.
   type StaleFilterKey = "7d" | "14d" | "30d" | "60d" | null;
@@ -346,6 +352,12 @@ function TriagePage() {
       if (segmentoFilter && c.segmento !== segmentoFilter) return false;
       if (confidenceFilter && confidenceLevel(c).level !== confidenceFilter)
         return false;
+      if (subgroupFilter) {
+        const hks = c.has_known_store;
+        if (subgroupFilter === "no_store" && hks !== false) return false;
+        if (subgroupFilter === "has_store" && hks !== true) return false;
+        if (subgroupFilter === "default_unknown" && hks !== null && hks !== undefined) return false;
+      }
       if (dateFilter) {
         const ts = c.reply_timestamp ? Date.parse(c.reply_timestamp) : NaN;
         if (Number.isNaN(ts)) return false;
@@ -370,6 +382,7 @@ function TriagePage() {
     turnTypeFilter,
     segmentoFilter,
     confidenceFilter,
+    subgroupFilter,
     dateFilter,
     staleFilter,
     lastContactedMap,
@@ -420,11 +433,13 @@ function TriagePage() {
     setConfidenceFilter(null);
     setDateFilter(null);
     setStaleFilter(null);
+    setSubgroupFilter(null);
   }
   const anyFilterActive =
     turnTypeFilter !== null ||
     segmentoFilter !== null ||
     confidenceFilter !== null ||
+    subgroupFilter !== null ||
     dateFilter !== null ||
     staleFilter !== null;
 
@@ -756,16 +771,22 @@ function TriagePage() {
             cases={allCases as TriageCase[]}
             turnTypeFilter={turnTypeFilter}
             segmentoFilter={segmentoFilter}
+            subgroupFilter={subgroupFilter}
             dateFilter={dateFilter}
             staleFilter={staleFilter}
             lastContactedMap={lastContactedMap}
             onTurnTypeChange={setTurnTypeFilter}
             onSegmentoChange={setSegmentoFilter}
+            onSubgroupChange={setSubgroupFilter}
             onDateChange={setDateFilter}
             onStaleChange={setStaleFilter}
             anyFilterActive={anyFilterActive}
             onClearFilters={clearFilters}
           />
+          {/* Canary widget when filtering MEGA + no_store */}
+          {segmentoFilter === "MEGA" && subgroupFilter === "no_store" && (
+            <CanaryWidget segmento="MEGA" subgroup="no_store" />
+          )}
           <div className="flex flex-col gap-2 overflow-y-auto pr-1 flex-1">
             {cases.length === 0 ? (
               <EmptyQueue />
@@ -1052,6 +1073,22 @@ function CaseListItem({
                   AI
                 </span>
               )}
+              {c.has_known_store === false && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-blue-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                  title="Detección: SIN tienda online (subgroup=no_store)"
+                >
+                  TIENDA NO
+                </span>
+              )}
+              {c.has_known_store === true && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-violet-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                  title="Detección: CON tienda online (subgroup=has_store)"
+                >
+                  TIENDA SÍ
+                </span>
+              )}
               {missingTurn1 && (
                 <span
                   className="inline-flex items-center justify-center rounded-sm bg-amber-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
@@ -1208,15 +1245,89 @@ function ConfidenceLegend({
 
 // ---------- filter bar (sidebar) ----------
 
+function CanaryWidget({ segmento, subgroup }: { segmento: string; subgroup: "no_store" | "has_store" | "default_unknown" }) {
+  const fn = useServerFn(getCanaryMetrics);
+  const [m, setM] = useState<CanaryMetrics | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  // Map default_unknown del filtro UI a "default" del backend
+  const backendSubgroup: "no_store" | "has_store" | "default" =
+    subgroup === "default_unknown" ? "default" : subgroup;
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    fn({ data: { segmento, subgroup: backendSubgroup, limit: 50 } })
+      .then((r) => { if (!cancelled) setM(r); })
+      .catch((e) => { if (!cancelled) setErr(e instanceof Error ? e.message : String(e)); });
+    return () => { cancelled = true; };
+  }, [segmento, backendSubgroup, fn]);
+
+  if (err) {
+    return (
+      <div className="rounded-md border border-red-300 bg-red-50/70 p-2 text-[10px] text-red-700">
+        Canary metrics error: {err}
+      </div>
+    );
+  }
+  if (!m) {
+    return (
+      <div className="rounded-md border bg-card p-2 text-[10px] text-muted-foreground italic">
+        Calculando canary metrics…
+      </div>
+    );
+  }
+
+  const pctApproval = (m.approval_rate * 100).toFixed(0);
+  const pctScore = (m.score_ge_95_rate * 100).toFixed(0);
+  const tone = m.ready_to_flip
+    ? "border-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/30"
+    : "border-amber-300 bg-amber-50/40 dark:bg-amber-950/20";
+
+  return (
+    <div className={cn("rounded-md border p-2.5 space-y-1.5 text-[11px]", tone)}>
+      <div className="flex items-center gap-2 flex-wrap font-semibold">
+        <span>🎯 {segmento} · {subgroup === "no_store" ? "Sin tienda" : subgroup === "has_store" ? "Con tienda" : "Sin clasif."}</span>
+        <span className="text-muted-foreground font-normal">·</span>
+        <span className="font-normal">{m.pending_count} en cola</span>
+        {m.ready_to_flip ? (
+          <span className="ml-auto rounded bg-emerald-600 text-white px-1.5 py-0.5 text-[10px]">
+            🟢 LISTO PARA AUTO-SEND
+          </span>
+        ) : (
+          <span className="ml-auto text-[10px] text-amber-700 dark:text-amber-300">
+            🟠 todavía no
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap text-[10px]">
+        <span className="text-muted-foreground">Últimos {m.processed_count} procesados:</span>
+        <span>✅ <strong>{m.approved_no_edit_count}</strong> sin editar</span>
+        <span>✏️ <strong>{m.edited_count}</strong> editados</span>
+        <span>🚫 <strong>{m.rejected_count}</strong> rechazados</span>
+        {m.deep_review_count > 0 && <span>🔍 {m.deep_review_count} deep</span>}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap text-[10px]">
+        <span>Approval-no-edit: <strong>{pctApproval}%</strong> <span className="text-muted-foreground">(min 80%)</span></span>
+        <span>Score≥95: <strong>{pctScore}%</strong> <span className="text-muted-foreground">(min 90%)</span></span>
+        <span>Consecutivas: <strong>{m.consecutive_approved_no_edit}</strong> <span className="text-muted-foreground">(min 8)</span></span>
+      </div>
+      <div className="text-[10px] italic text-muted-foreground">
+        {m.ready_reason}
+      </div>
+    </div>
+  );
+}
+
 function FilterBar({
   cases,
   turnTypeFilter,
   segmentoFilter,
+  subgroupFilter,
   dateFilter,
   staleFilter,
   lastContactedMap,
   onTurnTypeChange,
   onSegmentoChange,
+  onSubgroupChange,
   onDateChange,
   onStaleChange,
   anyFilterActive,
@@ -1225,11 +1336,13 @@ function FilterBar({
   cases: TriageCase[];
   turnTypeFilter: string | null;
   segmentoFilter: string | null;
+  subgroupFilter: "no_store" | "has_store" | "default_unknown" | null;
   dateFilter: "1h" | "4h" | "24h" | "3d" | "7d" | null;
   staleFilter: "7d" | "14d" | "30d" | "60d" | null;
   lastContactedMap: Record<string, string | null> | null;
   onTurnTypeChange: (v: string | null) => void;
   onSegmentoChange: (v: string | null) => void;
+  onSubgroupChange: (v: "no_store" | "has_store" | "default_unknown" | null) => void;
   onDateChange: (v: "1h" | "4h" | "24h" | "3d" | "7d" | null) => void;
   onStaleChange: (v: "7d" | "14d" | "30d" | "60d" | null) => void;
   anyFilterActive: boolean;
@@ -1309,6 +1422,30 @@ function FilterBar({
           onChange={onSegmentoChange}
         />
       )}
+      {(() => {
+        // Subgroup filter — counts en vivo sobre los casos cargados
+        const counts = { no_store: 0, has_store: 0, default_unknown: 0 };
+        for (const c of cases) {
+          const hks = c.has_known_store;
+          if (hks === false) counts.no_store++;
+          else if (hks === true) counts.has_store++;
+          else counts.default_unknown++;
+        }
+        const total = counts.no_store + counts.has_store + counts.default_unknown;
+        if (total === 0) return null;
+        return (
+          <FilterChipRow
+            label="Tienda"
+            options={[
+              { value: "no_store", label: "Sin tienda", count: counts.no_store },
+              { value: "has_store", label: "Con tienda", count: counts.has_store },
+              { value: "default_unknown", label: "Sin clasif.", count: counts.default_unknown },
+            ]}
+            activeValue={subgroupFilter}
+            onChange={(v) => onSubgroupChange(v as "no_store" | "has_store" | "default_unknown" | null)}
+          />
+        );
+      })()}
       <FilterChipRow
         label="Cola"
         options={dateOptions.map((o) => ({
