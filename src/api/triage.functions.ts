@@ -673,23 +673,55 @@ export const regenerateCase = createServerFn({ method: "POST" })
  * detector heurístico se equivocó (ej. dominio comercial que no matcheó la
  * regex) y queremos corregir antes de regenerar el Turn 1.
  *
- * Después de cambiar el valor, normalmente conviene llamar a regenerateCase
- * para que el Turn 1 se reconstruya con el prompt apropiado al nuevo subgroup.
+ * Semántica del negocio:
+ *   - MEGA    = lead sin tienda (aspiracional)
+ *   - Genesis = lead con tienda (empresa establecida)
+ *
+ * Así que cambiar la flag implica también cambiar el segmento para mantener
+ * coherencia con el resto del sistema (routing de prompts, stats, A/B):
+ *   - has_known_store=true  → segmento='Genesis'  → usa prompt Genesis
+ *   - has_known_store=false → segmento='MEGA'     → usa prompt MEGA/no_store
+ *   - has_known_store=null  → segmento sin tocar  (no sabemos)
+ *
+ * Tras esto, normalmente se llama a regenerateCase para reconstruir el Turn 1
+ * con el prompt apropiado al nuevo segmento+subgroup.
  */
 export const setHasKnownStore = createServerFn({ method: "POST" })
   .inputValidator(
     (data: { id: string; has_known_store: boolean | null }) => data
   )
   .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    // Cargar row para saber segmento previo (para log)
+    const before = (await pgrest(
+      `${TABLE}?id=eq.${encodeURIComponent(data.id)}&select=segmento,has_known_store&limit=1`,
+      { method: "GET" }
+    )) as Array<{ segmento: string | null; has_known_store: boolean | null }>;
+    const prevSegment = before?.[0]?.segmento ?? null;
+    const prevStore = before?.[0]?.has_known_store ?? null;
+
+    const patch: Record<string, unknown> = {
+      has_known_store: data.has_known_store,
+    };
+    let newSegment = prevSegment;
+    if (data.has_known_store === true) {
+      newSegment = "Genesis";
+      patch.segmento = "Genesis";
+    } else if (data.has_known_store === false) {
+      newSegment = "MEGA";
+      patch.segmento = "MEGA";
+    }
+    // null → segmento sin tocar (no sabemos qué es)
+
     await pgrest(`${TABLE}?id=eq.${encodeURIComponent(data.id)}`, {
       method: "PATCH",
       prefer: "return=minimal",
-      body: JSON.stringify({
-        has_known_store: data.has_known_store,
-      }),
+      body: JSON.stringify(patch),
     });
     await logEvent(data.id, "has_known_store_manual_override", {
       new_value: data.has_known_store,
+      previous_value: prevStore,
+      segment_before: prevSegment,
+      segment_after: newSegment,
     });
     return { ok: true };
   });
