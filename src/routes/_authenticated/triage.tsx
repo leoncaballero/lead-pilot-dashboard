@@ -290,6 +290,10 @@ function TriagePage() {
   type SubgroupFilterKey = "no_store" | "has_store" | "default_unknown" | null;
   const [subgroupFilter, setSubgroupFilter] = useState<SubgroupFilterKey>(null);
 
+  // Filtro por outcome del lead (booked, won, lost, none)
+  type OutcomeFilterKey = "none" | "booked" | "closed_won" | "closed_lost" | "attended" | "no_show" | null;
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilterKey>(null);
+
   // Filtro "sin contacto >Nd" basado en HubSpot notes_last_contacted.
   // Fetch lazy en background al montar — si falla, el filtro queda inerte.
   type StaleFilterKey = "7d" | "14d" | "30d" | "60d" | null;
@@ -358,6 +362,11 @@ function TriagePage() {
         if (subgroupFilter === "has_store" && hks !== true) return false;
         if (subgroupFilter === "default_unknown" && hks !== null && hks !== undefined) return false;
       }
+      if (outcomeFilter) {
+        const lo = c.lead_outcome ?? null;
+        if (outcomeFilter === "none" && lo !== null) return false;
+        if (outcomeFilter !== "none" && lo !== outcomeFilter) return false;
+      }
       if (dateFilter) {
         const ts = c.reply_timestamp ? Date.parse(c.reply_timestamp) : NaN;
         if (Number.isNaN(ts)) return false;
@@ -383,6 +392,7 @@ function TriagePage() {
     segmentoFilter,
     confidenceFilter,
     subgroupFilter,
+    outcomeFilter,
     dateFilter,
     staleFilter,
     lastContactedMap,
@@ -434,12 +444,14 @@ function TriagePage() {
     setDateFilter(null);
     setStaleFilter(null);
     setSubgroupFilter(null);
+    setOutcomeFilter(null);
   }
   const anyFilterActive =
     turnTypeFilter !== null ||
     segmentoFilter !== null ||
     confidenceFilter !== null ||
     subgroupFilter !== null ||
+    outcomeFilter !== null ||
     dateFilter !== null ||
     staleFilter !== null;
 
@@ -767,17 +779,24 @@ function TriagePage() {
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar lista */}
         <aside className="w-[30%] min-w-[260px] flex flex-col gap-2 overflow-hidden pr-1">
+          <StageTabs
+            cases={allCases as TriageCase[]}
+            turnTypeFilter={turnTypeFilter}
+            onChange={setTurnTypeFilter}
+          />
           <FilterBar
             cases={allCases as TriageCase[]}
             turnTypeFilter={turnTypeFilter}
             segmentoFilter={segmentoFilter}
             subgroupFilter={subgroupFilter}
+            outcomeFilter={outcomeFilter}
             dateFilter={dateFilter}
             staleFilter={staleFilter}
             lastContactedMap={lastContactedMap}
             onTurnTypeChange={setTurnTypeFilter}
             onSegmentoChange={setSegmentoFilter}
             onSubgroupChange={setSubgroupFilter}
+            onOutcomeChange={setOutcomeFilter}
             onDateChange={setDateFilter}
             onStaleChange={setStaleFilter}
             anyFilterActive={anyFilterActive}
@@ -1089,6 +1108,46 @@ function CaseListItem({
                   TIENDA SÍ
                 </span>
               )}
+              {c.lead_outcome === "booked" && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-amber-200 px-1 py-0 text-[9px] font-bold uppercase leading-none text-amber-900 dark:bg-amber-900/60 dark:text-amber-200"
+                  title="Lead ya reservó reunión — objetivo conseguido"
+                >
+                  🗓 BOOKED
+                </span>
+              )}
+              {c.lead_outcome === "attended" && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-emerald-200 px-1 py-0 text-[9px] font-bold uppercase leading-none text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200"
+                  title="Lead asistió a la reunión"
+                >
+                  ✓ ASIST
+                </span>
+              )}
+              {c.lead_outcome === "closed_won" && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-emerald-600 px-1 py-0 text-[9px] font-bold uppercase leading-none text-white"
+                  title="Cliente cerrado WON"
+                >
+                  🏆 WON
+                </span>
+              )}
+              {c.lead_outcome === "closed_lost" && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-red-200 px-1 py-0 text-[9px] font-bold uppercase leading-none text-red-900 dark:bg-red-900/60 dark:text-red-200"
+                  title="Cerrado LOST"
+                >
+                  ❌ LOST
+                </span>
+              )}
+              {c.lead_outcome === "no_show" && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-orange-200 px-1 py-0 text-[9px] font-bold uppercase leading-none text-orange-900 dark:bg-orange-900/60 dark:text-orange-200"
+                  title="No-show a la reunión agendada"
+                >
+                  ✗ NO-SHOW
+                </span>
+              )}
               {missingTurn1 && (
                 <span
                   className="inline-flex items-center justify-center rounded-sm bg-amber-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
@@ -1245,6 +1304,80 @@ function ConfidenceLegend({
 
 // ---------- filter bar (sidebar) ----------
 
+function StageTabs({
+  cases,
+  turnTypeFilter,
+  onChange,
+}: {
+  cases: TriageCase[];
+  turnTypeFilter: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  // Agrupa los turn_types en 3 buckets para que la barra sea legible:
+  // Turn 1, Turn 2, Otros (FU + booking_propose + objection_response + turn 3+)
+  const counts = useMemo(() => {
+    const m = { turn1: 0, turn2: 0, otros: 0 };
+    for (const c of cases) {
+      const t = c.turn_type ?? "turn1";
+      if (t === "turn1") m.turn1++;
+      else if (t === "turn2_generic" || t === "turn2") m.turn2++;
+      else m.otros++;
+    }
+    return m;
+  }, [cases]);
+
+  const total = counts.turn1 + counts.turn2 + counts.otros;
+  if (total === 0) return null;
+
+  const TABS: Array<{ key: string | null; label: string; count: number; predicate?: (t: string) => boolean }> = [
+    { key: null, label: "Todos", count: total },
+    { key: "turn1", label: "Turn 1 (1ª respuesta)", count: counts.turn1 },
+    { key: "turn2_generic", label: "Turn 2 (2ª respuesta)", count: counts.turn2 },
+  ];
+  // Botón Otros — comportamiento especial: si activamos "otros", limpiamos turn1/turn2 y NO setteamos turnTypeFilter (sería un superset)
+  // pero como turnTypeFilter es un valor único, lo encapsulamos en un pseudo-key 'otros'
+  // Para no complicar, omitimos "Otros" por ahora; el usuario puede usar el chip filter más fino abajo si lo necesita
+  const isOtros = !!turnTypeFilter && turnTypeFilter !== "turn1" && turnTypeFilter !== "turn2_generic" && turnTypeFilter !== "turn2";
+
+  return (
+    <div className="rounded-lg border bg-card p-1 flex items-center gap-1 overflow-x-auto">
+      {TABS.map((t) => {
+        const active = t.key === turnTypeFilter || (t.key === null && turnTypeFilter === null && !isOtros);
+        return (
+          <button
+            key={t.key ?? "all"}
+            type="button"
+            onClick={() => onChange(t.key)}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap",
+              active
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            )}
+          >
+            <span>{t.label}</span>
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-[10px] tabular-nums",
+                active
+                  ? "bg-primary-foreground/20 text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {t.count}
+            </span>
+          </button>
+        );
+      })}
+      {counts.otros > 0 && (
+        <span className="text-[10px] text-muted-foreground ml-2 whitespace-nowrap">
+          + {counts.otros} otros (usa chip Tipo abajo)
+        </span>
+      )}
+    </div>
+  );
+}
+
 function CanaryWidget({ segmento, subgroup }: { segmento: string; subgroup: "no_store" | "has_store" | "default_unknown" }) {
   const fn = useServerFn(getCanaryMetrics);
   const [m, setM] = useState<CanaryMetrics | null>(null);
@@ -1322,12 +1455,14 @@ function FilterBar({
   turnTypeFilter,
   segmentoFilter,
   subgroupFilter,
+  outcomeFilter,
   dateFilter,
   staleFilter,
   lastContactedMap,
   onTurnTypeChange,
   onSegmentoChange,
   onSubgroupChange,
+  onOutcomeChange,
   onDateChange,
   onStaleChange,
   anyFilterActive,
@@ -1337,12 +1472,14 @@ function FilterBar({
   turnTypeFilter: string | null;
   segmentoFilter: string | null;
   subgroupFilter: "no_store" | "has_store" | "default_unknown" | null;
+  outcomeFilter: "none" | "booked" | "closed_won" | "closed_lost" | "attended" | "no_show" | null;
   dateFilter: "1h" | "4h" | "24h" | "3d" | "7d" | null;
   staleFilter: "7d" | "14d" | "30d" | "60d" | null;
   lastContactedMap: Record<string, string | null> | null;
   onTurnTypeChange: (v: string | null) => void;
   onSegmentoChange: (v: string | null) => void;
   onSubgroupChange: (v: "no_store" | "has_store" | "default_unknown" | null) => void;
+  onOutcomeChange: (v: "none" | "booked" | "closed_won" | "closed_lost" | "attended" | "no_show" | null) => void;
   onDateChange: (v: "1h" | "4h" | "24h" | "3d" | "7d" | null) => void;
   onStaleChange: (v: "7d" | "14d" | "30d" | "60d" | null) => void;
   anyFilterActive: boolean;
@@ -1443,6 +1580,34 @@ function FilterBar({
             ]}
             activeValue={subgroupFilter}
             onChange={(v) => onSubgroupChange(v as "no_store" | "has_store" | "default_unknown" | null)}
+          />
+        );
+      })()}
+      {(() => {
+        // Outcome filter — solo aparece si hay leads con outcomes para no añadir ruido
+        const counts: Record<string, number> = {
+          none: 0, booked: 0, closed_won: 0, closed_lost: 0, attended: 0, no_show: 0
+        };
+        for (const c of cases) {
+          const o = c.lead_outcome ?? null;
+          if (o === null) counts.none++;
+          else if (counts[o] !== undefined) counts[o]++;
+        }
+        const hasOutcomes = counts.booked + counts.closed_won + counts.closed_lost + counts.attended + counts.no_show > 0;
+        if (!hasOutcomes) return null;
+        return (
+          <FilterChipRow
+            label="Estado"
+            options={[
+              { value: "none", label: "Sin outcome", count: counts.none },
+              { value: "booked", label: "🗓 Booked", count: counts.booked },
+              { value: "attended", label: "✓ Asistió", count: counts.attended },
+              { value: "no_show", label: "✗ No-show", count: counts.no_show },
+              { value: "closed_won", label: "🏆 Won", count: counts.closed_won },
+              { value: "closed_lost", label: "❌ Lost", count: counts.closed_lost },
+            ]}
+            activeValue={outcomeFilter}
+            onChange={(v) => onOutcomeChange(v as "none" | "booked" | "closed_won" | "closed_lost" | "attended" | "no_show" | null)}
           />
         );
       })()}
