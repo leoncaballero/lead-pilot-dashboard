@@ -45,11 +45,20 @@ export type TriageCase = {
   razones_fallo?: string[] | null;
   status?: string | null;
   created_at?: string | null;
-  // Defensa progresiva: estos campos llegan tras ejecutar el ALTER TABLE
-  // de extender pipeline (setting-pilot-extend-turns.sql). Mientras no exista
-  // la columna en DB, vienen undefined → fallback a 'turn1' / 1 en la UI.
   turn_number?: number | null;
   turn_type?: string | null;
+  // Snapshot del hilo Smartlead capturado en ingesta (WF02 v2)
+  thread_snapshot?: Array<{
+    type?: string;
+    seq?: number | null;
+    time?: string | null;
+    subject?: string | null;
+    body_text?: string;
+  }> | null;
+  setter_email?: string | null;
+  setter_name?: string | null;
+  lead_resolved_name?: string | null;
+  has_known_store?: boolean | null;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
