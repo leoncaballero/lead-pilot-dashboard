@@ -21,11 +21,13 @@ import {
   createPromptVersion,
   activatePromptVersion,
   setPromptAutoSend,
+  setTrafficWeights,
   suggestPromptImprovements,
   refinePromptWithFeedback,
   evalPrompt,
   getEvalSamples,
   getPromptStats,
+  getABComparison,
   PROMPT_TYPE_VALUES,
   SEGMENTO_VALUES,
   TURN_TYPE_VALUES,
@@ -42,6 +44,7 @@ import {
   type EvalTestCase,
   type EvalResult,
   type PromptVersionStats,
+  type ABComparisonResult,
 } from "@/api/prompts.functions";
 
 const TURN_TYPE_LABELS: Record<TurnType, string> = {
@@ -288,6 +291,160 @@ function PromptMatrix({
   );
 }
 
+function ABComparisonPanel({
+  prompt_type,
+  segmento,
+  turn_type,
+  subgroup,
+}: {
+  prompt_type: PromptType;
+  segmento: Segmento;
+  turn_type: TurnType;
+  subgroup: Subgroup;
+}) {
+  const fn = useServerFn(getABComparison);
+  const setWeightsFn = useServerFn(setTrafficWeights);
+  const router = useRouter();
+  const [data, setData] = useState<ABComparisonResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fn({ data: { prompt_type, segmento, turn_type, subgroup } })
+      .then((r) => {
+        if (!cancelled) setData(r);
+      })
+      .catch(() => {
+        if (!cancelled) setData(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prompt_type, segmento, turn_type, subgroup, fn]);
+
+  if (!data || data.versions.length < 2) {
+    // No hay A/B activo — solo una versión (o ninguna). Panel oculto.
+    return null;
+  }
+
+  async function promote(winner_id: string) {
+    setBusy(true);
+    try {
+      const weights = data!.versions.map((v) => ({
+        id: v.version_id,
+        weight: v.version_id === winner_id ? 100 : 0,
+        setActive: v.version_id === winner_id,
+      }));
+      await setWeightsFn({ data: { weights } });
+      await router.invalidate();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function adjustSplit(weights: Array<{ id: string; weight: number }>) {
+    setBusy(true);
+    try {
+      await setWeightsFn({
+        data: { weights: weights.map((w) => ({ ...w, setActive: w.weight > 0 })) },
+      });
+      await router.invalidate();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Sugerencias de split preset
+  const ids = data.versions.map((v) => v.version_id);
+  const presets: Array<{ label: string; weights: number[] }> = [];
+  if (ids.length === 2) {
+    presets.push({ label: "50 / 50", weights: [50, 50] });
+    presets.push({ label: "80 / 20", weights: [80, 20] });
+    presets.push({ label: "20 / 80", weights: [20, 80] });
+  }
+
+  return (
+    <div className="border-b px-4 py-3 bg-blue-50/40 dark:bg-blue-950/20 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-blue-900 dark:text-blue-200">
+          ⚖️ A/B test en curso · {data.versions.length} versiones activas
+        </h3>
+        {data.stat_significant && (
+          <Badge className="bg-emerald-600 hover:bg-emerald-600 h-5 text-[10px]">
+            🟢 Significativo
+          </Badge>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {data.versions.map((v) => {
+          const isWinner = v.version_id === data.winner_version_id;
+          return (
+            <div
+              key={v.version_id}
+              className={cn(
+                "rounded border p-2 text-xs flex items-center gap-3",
+                isWinner && "border-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/30"
+              )}
+            >
+              <div className="font-mono w-20">{v.version}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                  {v.traffic_weight}% tráfico
+                </span>
+              </div>
+              <div className="flex items-center gap-2 ml-auto text-[11px] tabular-nums">
+                <span>{v.generated_count} gen</span>
+                <span className="rounded bg-blue-100 px-1.5 py-0.5 dark:bg-blue-900/40">
+                  ↩ {(v.reply_rate * 100).toFixed(0)}%
+                </span>
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 dark:bg-amber-900/40">
+                  🗓 {(v.booking_rate * 100).toFixed(0)}%
+                </span>
+                <span className="rounded bg-emerald-100 px-1.5 py-0.5 dark:bg-emerald-900/40">
+                  🏆 {(v.win_rate * 100).toFixed(0)}%
+                </span>
+              </div>
+              {data.stat_significant && (
+                <Button
+                  size="sm"
+                  variant={isWinner ? "default" : "outline"}
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => promote(v.version_id)}
+                  disabled={busy}
+                >
+                  {isWinner ? "🏆 Promover a 100%" : "Promover esta"}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground italic">
+        {data.notes}
+      </div>
+      {presets.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+          <span className="text-[10px] text-muted-foreground">Split:</span>
+          {presets.map((p) => (
+            <Button
+              key={p.label}
+              size="sm"
+              variant="outline"
+              className="h-6 text-[10px] px-2"
+              onClick={() =>
+                adjustSplit(ids.map((id, i) => ({ id, weight: p.weights[i] ?? 0 })))
+              }
+              disabled={busy}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PromptStatsRow({
   stats,
   loading,
@@ -406,6 +563,11 @@ function PromptDetailPanel({
           <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
             {group.segmento}
           </Badge>
+          {group.subgroup && (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] bg-blue-50 dark:bg-blue-950/20">
+              {group.subgroup}
+            </Badge>
+          )}
         </div>
         <button
           type="button"
@@ -416,6 +578,13 @@ function PromptDetailPanel({
           ✕
         </button>
       </div>
+
+      <ABComparisonPanel
+        prompt_type={group.prompt_type}
+        segmento={group.segmento}
+        turn_type={group.turn_type}
+        subgroup={group.subgroup}
+      />
 
       {group.active && (
         <>
@@ -2029,6 +2198,8 @@ function CreateNewDialog({
   );
   const [setActive, setSetActive] = useState(true);
   const [autoSendEnabled, setAutoSendEnabled] = useState(false);
+  const [abMode, setAbMode] = useState(false);
+  const [trafficWeight, setTrafficWeight] = useState<string>("100");
   const [copyFrom, setCopyFrom] = useState<string>("");
 
   // Si se cambia segmento a algo distinto de MEGA, subgroup vuelve a null
@@ -2309,6 +2480,48 @@ function CreateNewDialog({
               </span>
             </label>
           )}
+
+          {setActive && (
+            <div className="rounded border bg-blue-50/40 dark:bg-blue-950/20 p-3 space-y-2">
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={abMode}
+                  onChange={(e) => setAbMode(e.target.checked)}
+                  className="h-4 w-4 mt-0.5"
+                />
+                <span className="flex-1">
+                  <span className="font-medium text-blue-900 dark:text-blue-200">
+                    ⚖️ Modo A/B (convive con la versión activa actual)
+                  </span>
+                  <span className="block text-[11px] text-blue-800/80 dark:text-blue-300/80 mt-0.5">
+                    Si está activado, NO desactivamos la versión actual al crear esta nueva.
+                    Ambas reciben tráfico repartido según los pesos. Default: 20% para la nueva, 80% sigue en la actual (canary).
+                  </span>
+                </span>
+              </label>
+              {abMode && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Label className="text-xs">Tráfico de la nueva:</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={trafficWeight}
+                    onChange={(e) => setTrafficWeight(e.target.value)}
+                    className="h-7 w-20 text-xs"
+                  />
+                  <span className="text-[11px] text-muted-foreground">
+                    % (la actual queda con {Math.max(0, 100 - (parseInt(trafficWeight, 10) || 0))}% si las ajustas a sumar 100)
+                  </span>
+                  <span className="text-[10px] text-muted-foreground italic ml-2">
+                    Sugerido para canary: 20
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
@@ -2328,11 +2541,13 @@ function CreateNewDialog({
                 max_tokens: parseInt(maxTokens, 10) || 2048,
                 setActive,
                 auto_send_enabled: promptType === "generator" ? autoSendEnabled : false,
+                ab_mode: abMode,
+                traffic_weight: abMode ? parseInt(trafficWeight, 10) || 20 : 100,
               })
             }
             disabled={busy || !canSave}
           >
-            {busy ? "Guardando..." : "Crear prompt"}
+            {busy ? "Guardando..." : abMode ? "Crear como variante A/B" : "Crear prompt"}
           </Button>
         </DialogFooter>
       </DialogContent>
