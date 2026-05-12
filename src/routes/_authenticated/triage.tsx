@@ -35,6 +35,7 @@ import {
   getTriageCases,
   regenerateCase,
   rejectCase,
+  rescueCase,
   setHasKnownStore,
   undoSdrAction,
   type CanaryMetrics,
@@ -474,8 +475,26 @@ function TriagePage() {
   const editFn = useServerFn(editCase);
   const regenFn = useServerFn(regenerateCase);
   const setStoreFn = useServerFn(setHasKnownStore);
+  const rescueFn = useServerFn(rescueCase);
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const [settingStore, setSettingStore] = useState<string | null>(null);
+  const [rescuing, setRescuing] = useState<string | null>(null);
+
+  async function handleRescue(caseId: string) {
+    setRescuing(caseId);
+    try {
+      const res = await rescueFn({ data: { id: caseId } });
+      if (!res.ok) {
+        alert(`Rescatar falló: ${res.error}`);
+      } else {
+        await router.invalidate();
+      }
+    } catch (e) {
+      alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRescuing(null);
+    }
+  }
 
   async function handleRegenerate(caseId: string) {
     setRegenerating(caseId);
@@ -937,6 +956,8 @@ function TriagePage() {
                     handleSetStore(selected.id, value, regenerateAfter)
                   }
                   settingStore={settingStore === selected.id}
+                  onRescue={() => handleRescue(selected.id)}
+                  rescuing={rescuing === selected.id}
                 />
               </div>
               <ActionsFooter
@@ -1164,6 +1185,7 @@ function CaseListItem({
   const tier = aiConfidenceTier(c);
   const sla = slaSeverity(min);
   const missingTurn1 = hasMissingTurn1Bug(c);
+  const isAutoRejected = c.status === "auto_rejected";
   return (
     <div
       className={cn(
@@ -1171,7 +1193,9 @@ function CaseListItem({
         conf.borderClasses,
         // SLA prima sobre confidence cuando es urgent/critical (más importante actuar rápido)
         slaBorderClass(sla),
-        active && "border-primary bg-accent"
+        active && "border-primary bg-accent",
+        // Auto-rejected: borde naranja distintivo + ligeramente opacado
+        isAutoRejected && "border-orange-300 bg-orange-50/30 opacity-90 dark:border-orange-900/60 dark:bg-orange-950/20"
       )}
       onClick={onClick}
     >
@@ -1189,7 +1213,15 @@ function CaseListItem({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              {tier === "auto" && !missingTurn1 && (
+              {isAutoRejected && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-sm bg-orange-500 px-1 py-0 text-[9px] font-bold uppercase leading-none text-white"
+                  title="Caso auto-rechazado por el sistema — rescátalo si el lead es válido"
+                >
+                  ⚠ AUTO-RECHAZADO
+                </span>
+              )}
+              {!isAutoRejected && tier === "auto" && !missingTurn1 && (
                 <span
                   className="inline-flex items-center gap-0.5 rounded-sm bg-emerald-100 px-1 py-0 text-[9px] font-bold uppercase leading-none text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
                   title="🟢 AUTO — score ≥95 sin críticos. Cumple criterio auto-send."
@@ -1926,6 +1958,71 @@ function FilterChipRow({
   );
 }
 
+// ---------- auto-rejected banner ----------
+
+function AutoRejectedBanner({
+  case: c,
+  onRescue,
+  rescuing,
+}: {
+  case: TriageCase;
+  onRescue: () => void;
+  rescuing: boolean;
+}) {
+  const val = c.validation_output ?? {};
+  // Razón principal — del razones_fallo o errores_criticos
+  const razones = Array.isArray(val.razones_fallo) ? val.razones_fallo : [];
+  const errores = Array.isArray(val.errores_criticos) ? val.errores_criticos : [];
+  const mainReason = razones[0] ?? errores[0] ?? "Sin razón registrada";
+  const isSkipFromClassifier = errores.some((e: string) =>
+    typeof e === "string" && e.startsWith("skip: STOP_LEAD_INVALIDO")
+  );
+  return (
+    <div className="rounded-md border-2 border-orange-400 bg-orange-50/60 dark:bg-orange-950/30 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-orange-900 dark:text-orange-200">
+          ⚠ Caso auto-rechazado por el sistema
+        </h3>
+      </div>
+      <p className="text-[11px] text-orange-900/80 dark:text-orange-200/80">
+        {isSkipFromClassifier ? (
+          <>
+            El <strong>clasificador</strong> marcó este reply como{" "}
+            <code className="bg-orange-100 dark:bg-orange-900/50 px-1 rounded">
+              es_lead_valido=false
+            </code>{" "}
+            y se saltó la generación del Turn 1. Si crees que el lead es válido,
+            rescátalo y regenera.
+          </>
+        ) : (
+          <>
+            El <strong>validator</strong> rechazó el output con ≥3 errores
+            críticos antes de mostrarlo al SDR.
+          </>
+        )}
+      </p>
+      <div className="text-[11px] text-orange-900 dark:text-orange-200 rounded bg-orange-100/60 dark:bg-orange-900/40 p-2 font-mono">
+        {mainReason}
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="default"
+          onClick={onRescue}
+          disabled={rescuing}
+          className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
+        >
+          {rescuing ? "🛟 Rescatando…" : "🛟 Rescatar a Pending Review"}
+        </Button>
+        <span className="text-[10px] text-muted-foreground italic">
+          Tras rescatar, usa "🔄 Regenerar con IA" abajo si necesitas un Turn 1
+          nuevo.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ---------- store classifier control ----------
 
 function StoreClassifierControl({
@@ -2012,6 +2109,8 @@ function CaseDetail({
   regenerating,
   onSetStore,
   settingStore,
+  onRescue,
+  rescuing,
 }: {
   case: TriageCase;
   index: number;
@@ -2020,6 +2119,8 @@ function CaseDetail({
   regenerating: boolean;
   onSetStore: (value: boolean | null, regenerateAfter: boolean) => void;
   settingStore: boolean;
+  onRescue: () => void;
+  rescuing: boolean;
 }) {
   const min = minutesSince(c.reply_timestamp);
   const cls = c.classification_output ?? {};
@@ -2134,6 +2235,11 @@ function CaseDetail({
 
         {/* Columna derecha: Turn 1 destacado + score + acciones (scrollable) */}
         <div className="min-h-0 overflow-y-auto p-5 space-y-5">
+          {/* Banner auto-rejected — rescatar si el lead era válido */}
+          {c.status === "auto_rejected" && (
+            <AutoRejectedBanner case={c} onRescue={onRescue} rescuing={rescuing} />
+          )}
+
           {/* Contexto HubSpot del lead — ayuda a juzgar si avanzar y cómo */}
           <HubSpotLeadContextCard hubspotContactId={c.hubspot_contact_id ?? null} />
 

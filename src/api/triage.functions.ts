@@ -155,14 +155,31 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
     // que se añadan a cl001_p007_turn1_pipeline. Si la lista hardcodeada incluye
     // una columna inexistente, PostgREST falla. Con * el componente las recoge
     // si están y falla a undefined si no.
+    // Pending review: sin límite, todo lo que esté esperando revisión.
     const params = new URLSearchParams({
       select: "*",
       status: "eq.pending_review",
       order: "created_at.desc.nullslast",
     });
-    const data = ((await pgrest(`${TABLE}?${params.toString()}`, {
+    const pendingData = ((await pgrest(`${TABLE}?${params.toString()}`, {
       method: "GET",
     })) ?? []) as TriageCase[];
+
+    // Auto-rejected: solo últimos 7 días (acotado para no saturar). Sirve para
+    // que el SDR pueda rescatar casos que el sistema descartó por error.
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const rejectedParams = new URLSearchParams({
+      select: "*",
+      status: "eq.auto_rejected",
+      order: "created_at.desc.nullslast",
+      limit: "200",
+    });
+    rejectedParams.append("created_at", `gte.${since}`);
+    const rejectedData = ((await pgrest(`${TABLE}?${rejectedParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as TriageCase[];
+
+    const data = [...pendingData, ...rejectedData];
 
     // Enriquecer con outcome a nivel de LEAD (no de pipeline row):
     // Un lead se considera booked / won / lost si CUALQUIERA de sus filas
@@ -723,6 +740,50 @@ export const setHasKnownStore = createServerFn({ method: "POST" })
       segment_before: prevSegment,
       segment_after: newSegment,
     });
+    return { ok: true };
+  });
+
+/**
+ * Rescata un caso auto_rejected devolviéndolo a pending_review.
+ *
+ * Útil cuando el clasificador o validator descartó por error un lead que el
+ * humano considera válido. Limpia los errores críticos del validation_output
+ * (sin borrar el histórico — sólo vacía el array) para que el caso aparezca
+ * "limpio" en /triage. Si quieres un nuevo Turn 1, tras rescatar llama a
+ * regenerateCase desde la UI.
+ */
+export const rescueCase = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    const before = (await pgrest(
+      `${TABLE}?id=eq.${encodeURIComponent(data.id)}&select=status,validation_output&limit=1`,
+      { method: "GET" }
+    )) as Array<{ status: string | null; validation_output: Record<string, unknown> | null }>;
+    if (!before?.[0]) return { ok: false, error: "Caso no encontrado" };
+    if (before[0].status !== "auto_rejected") {
+      return { ok: false, error: `El caso no está auto_rejected (status=${before[0].status})` };
+    }
+    // Limpia los flags de rechazo (mantenemos errores_criticos viejos en una
+    // copia para auditoría, pero los vaciamos para que /triage no lo marque
+    // rojo).
+    const oldValidation = before[0].validation_output ?? {};
+    const newValidation: Record<string, unknown> = {
+      ...oldValidation,
+      errores_criticos: [],
+      razones_fallo: [],
+      rescued_from_auto_rejected_at: new Date().toISOString(),
+      original_errores_criticos: (oldValidation as Record<string, unknown>).errores_criticos ?? [],
+      original_razones_fallo: (oldValidation as Record<string, unknown>).razones_fallo ?? [],
+    };
+    await pgrest(`${TABLE}?id=eq.${encodeURIComponent(data.id)}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      body: JSON.stringify({
+        status: "pending_review",
+        validation_output: newValidation,
+      }),
+    });
+    await logEvent(data.id, "case_rescued_from_auto_rejected");
     return { ok: true };
   });
 
