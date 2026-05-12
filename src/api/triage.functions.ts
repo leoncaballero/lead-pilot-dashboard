@@ -520,6 +520,7 @@ export const regenerateCase = createServerFn({ method: "POST" })
         id: string;
         prompt_type: string;
         segmento: string;
+        subgroup: string | null;
         prompt_system: string;
         model: string;
         temperature: number | null;
@@ -531,16 +532,34 @@ export const regenerateCase = createServerFn({ method: "POST" })
         is_active: "eq.true",
         segmento: `in.(${segmento},MEGA)`,
         select:
-          "id,prompt_type,segmento,prompt_system,model,temperature,max_tokens,version",
+          "id,prompt_type,segmento,subgroup,prompt_system,model,temperature,max_tokens,version",
       });
       const prompts = ((await pgrest(`${PROMPTS_TABLE}?${pParams.toString()}`, {
         method: "GET",
       })) ?? []) as PromptRow[];
+      // Subgroup según has_known_store del row (mismo criterio que routing del WF02 v2)
+      const subgroupKey: "has_store" | "no_store" | null =
+        caseRow.has_known_store === true
+          ? "has_store"
+          : caseRow.has_known_store === false
+          ? "no_store"
+          : null;
       function pick(type: "classifier" | "generator" | "validator"): PromptRow | null {
         const candidates = prompts.filter((p) => p.prompt_type === type);
+        // Orden: exact (seg+subgroup) > seg+null > MEGA+subgroup > MEGA+null
         return (
-          candidates.find((p) => p.segmento === segmento) ??
-          candidates.find((p) => p.segmento === "MEGA") ??
+          (subgroupKey &&
+            candidates.find(
+              (p) => p.segmento === segmento && p.subgroup === subgroupKey
+            )) ||
+          candidates.find(
+            (p) => p.segmento === segmento && (p.subgroup === null || p.subgroup === undefined)
+          ) ||
+          (subgroupKey &&
+            candidates.find((p) => p.segmento === "MEGA" && p.subgroup === subgroupKey)) ||
+          candidates.find(
+            (p) => p.segmento === "MEGA" && (p.subgroup === null || p.subgroup === undefined)
+          ) ||
           null
         );
       }
@@ -568,11 +587,20 @@ export const regenerateCase = createServerFn({ method: "POST" })
         };
       }
 
-      // 2) Generator
+      // 2) Generator — preferimos lead_resolved_name (de Smartlead) y el setter
+      // real del hilo (no hardcoded Laura). Sin setter_name, dejamos al modelo
+      // sin firma — el prompt v1.3 ya está blindado para no inventarse uno.
+      const leadName =
+        caseRow.lead_resolved_name ||
+        caseRow.lead_name ||
+        "(sin nombre — saluda sin nombre, NUNCA uses Lead como placeholder)";
+      const setterFirstName = caseRow.setter_name
+        ? caseRow.setter_name.trim().split(/\s+/)[0]
+        : "";
       const generatorUserMsg =
-        `Datos del lead:\n- nombre: ${caseRow.lead_name ?? "Lead"}\n- email: ${
-          caseRow.lead_email ?? "?"
-        }\n- segmento: ${segmento}\n- setter: Laura\n\n` +
+        `Datos del lead:\n- nombre: ${leadName}\n- setter (la persona que firma este email): ${
+          setterFirstName || "(no identificado — NO firmar)"
+        }\n\n` +
         `Reply original del lead:\n"""\n${caseRow.reply_original}\n"""\n\n` +
         `Output del clasificador:\n${JSON.stringify(classification, null, 2)}`;
       const genResp = await callAnthropic(anthKey, genP, generatorUserMsg);
@@ -617,6 +645,10 @@ export const regenerateCase = createServerFn({ method: "POST" })
         errores_criticos:
           (validation as Record<string, unknown>).errores_criticos ?? [],
         razones_fallo: (validation as Record<string, unknown>).razones_fallo ?? [],
+        // Atribución exacta para A/B testing y stats.
+        classifier_version_id: clsP.id,
+        generator_version_id: genP.id,
+        validator_version_id: valP.id,
         status: "pending_review",
         sdr_action: null,
       };
@@ -635,6 +667,32 @@ export const regenerateCase = createServerFn({ method: "POST" })
       return { ok: true };
     }
   );
+
+/**
+ * Override manual del has_known_store de un pipeline row. Útil cuando el
+ * detector heurístico se equivocó (ej. dominio comercial que no matcheó la
+ * regex) y queremos corregir antes de regenerar el Turn 1.
+ *
+ * Después de cambiar el valor, normalmente conviene llamar a regenerateCase
+ * para que el Turn 1 se reconstruya con el prompt apropiado al nuevo subgroup.
+ */
+export const setHasKnownStore = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; has_known_store: boolean | null }) => data
+  )
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    await pgrest(`${TABLE}?id=eq.${encodeURIComponent(data.id)}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      body: JSON.stringify({
+        has_known_store: data.has_known_store,
+      }),
+    });
+    await logEvent(data.id, "has_known_store_manual_override", {
+      new_value: data.has_known_store,
+    });
+    return { ok: true };
+  });
 
 async function callAnthropic(
   apiKey: string,
