@@ -779,22 +779,27 @@ function TriagePage() {
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar lista */}
         <aside className="w-[30%] min-w-[260px] flex flex-col gap-2 overflow-hidden pr-1">
-          <StageTabs
+          <SegmentTabs
             cases={allCases as TriageCase[]}
+            segmentoFilter={segmentoFilter}
+            onChange={setSegmentoFilter}
+          />
+          <StageTabs
+            cases={(allCases as TriageCase[]).filter(
+              (c) => !segmentoFilter || c.segmento === segmentoFilter
+            )}
             turnTypeFilter={turnTypeFilter}
             onChange={setTurnTypeFilter}
           />
           <FilterBar
             cases={allCases as TriageCase[]}
             turnTypeFilter={turnTypeFilter}
-            segmentoFilter={segmentoFilter}
             subgroupFilter={subgroupFilter}
             outcomeFilter={outcomeFilter}
             dateFilter={dateFilter}
             staleFilter={staleFilter}
             lastContactedMap={lastContactedMap}
             onTurnTypeChange={setTurnTypeFilter}
-            onSegmentoChange={setSegmentoFilter}
             onSubgroupChange={setSubgroupFilter}
             onOutcomeChange={setOutcomeFilter}
             onDateChange={setDateFilter}
@@ -1304,6 +1309,94 @@ function ConfidenceLegend({
 
 // ---------- filter bar (sidebar) ----------
 
+function SegmentTabs({
+  cases,
+  segmentoFilter,
+  onChange,
+}: {
+  cases: TriageCase[];
+  segmentoFilter: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  // Counts en vivo por segmento sobre el dataset completo (no filtrado)
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of cases) {
+      const s = c.segmento ?? "(sin)";
+      m.set(s, (m.get(s) ?? 0) + 1);
+    }
+    return m;
+  }, [cases]);
+
+  const total = cases.length;
+  // Mostrar solo segmentos con casos. Orden: MEGA primero, luego alfabético
+  const segments = Array.from(counts.entries())
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => {
+      if (a === "MEGA") return -1;
+      if (b === "MEGA") return 1;
+      return a.localeCompare(b);
+    });
+
+  if (segments.length <= 1 && total === 0) return null;
+
+  return (
+    <div className="rounded-lg border bg-card p-1.5 flex items-center gap-1.5 overflow-x-auto">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={cn(
+          "rounded-md px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap",
+          segmentoFilter === null
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+        )}
+      >
+        <span>Todos</span>
+        <span
+          className={cn(
+            "rounded-full px-1.5 text-[10px] tabular-nums",
+            segmentoFilter === null
+              ? "bg-primary-foreground/20 text-primary-foreground"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          {total}
+        </span>
+      </button>
+      <span className="text-muted-foreground text-xs">│</span>
+      {segments.map(([seg, n]) => {
+        const active = segmentoFilter === seg;
+        return (
+          <button
+            key={seg}
+            type="button"
+            onClick={() => onChange(active ? null : seg)}
+            className={cn(
+              "rounded-md px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap",
+              active
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            )}
+          >
+            <span>{seg}</span>
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-[10px] tabular-nums",
+                active
+                  ? "bg-primary-foreground/20 text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {n}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function StageTabs({
   cases,
   turnTypeFilter,
@@ -1453,14 +1546,12 @@ function CanaryWidget({ segmento, subgroup }: { segmento: string; subgroup: "no_
 function FilterBar({
   cases,
   turnTypeFilter,
-  segmentoFilter,
   subgroupFilter,
   outcomeFilter,
   dateFilter,
   staleFilter,
   lastContactedMap,
   onTurnTypeChange,
-  onSegmentoChange,
   onSubgroupChange,
   onOutcomeChange,
   onDateChange,
@@ -1470,14 +1561,12 @@ function FilterBar({
 }: {
   cases: TriageCase[];
   turnTypeFilter: string | null;
-  segmentoFilter: string | null;
   subgroupFilter: "no_store" | "has_store" | "default_unknown" | null;
   outcomeFilter: "none" | "booked" | "closed_won" | "closed_lost" | "attended" | "no_show" | null;
   dateFilter: "1h" | "4h" | "24h" | "3d" | "7d" | null;
   staleFilter: "7d" | "14d" | "30d" | "60d" | null;
   lastContactedMap: Record<string, string | null> | null;
   onTurnTypeChange: (v: string | null) => void;
-  onSegmentoChange: (v: string | null) => void;
   onSubgroupChange: (v: "no_store" | "has_store" | "default_unknown" | null) => void;
   onOutcomeChange: (v: "none" | "booked" | "closed_won" | "closed_lost" | "attended" | "no_show" | null) => void;
   onDateChange: (v: "1h" | "4h" | "24h" | "3d" | "7d" | null) => void;
@@ -1494,18 +1583,7 @@ function FilterBar({
     }
     return m;
   }, [cases]);
-  const segmentoCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const c of cases) {
-      if (c.segmento) m.set(c.segmento, (m.get(c.segmento) ?? 0) + 1);
-    }
-    return m;
-  }, [cases]);
-
   const turnTypes = Array.from(turnTypeCounts.entries())
-    .filter(([, n]) => n > 0)
-    .sort((a, b) => a[0].localeCompare(b[0]));
-  const segmentos = Array.from(segmentoCounts.entries())
     .filter(([, n]) => n > 0)
     .sort((a, b) => a[0].localeCompare(b[0]));
 
@@ -1533,7 +1611,7 @@ function FilterBar({
     { value: "7d", label: ">7d" },
   ];
 
-  if (turnTypes.length <= 1 && segmentos.length <= 1 && cases.length < 5 && !anyFilterActive) {
+  if (turnTypes.length <= 1 && cases.length < 5 && !anyFilterActive) {
     return null;
   }
 
@@ -1551,14 +1629,7 @@ function FilterBar({
           onChange={onTurnTypeChange}
         />
       )}
-      {segmentos.length > 1 && (
-        <FilterChipRow
-          label="Segm."
-          options={segmentos.map(([k, n]) => ({ value: k, label: k, count: n }))}
-          activeValue={segmentoFilter}
-          onChange={onSegmentoChange}
-        />
-      )}
+      {/* Segmento chip removido — ahora vive como tabs prominentes arriba. */}
       {(() => {
         // Subgroup filter — counts en vivo sobre los casos cargados
         const counts = { no_store: 0, has_store: 0, default_unknown: 0 };
