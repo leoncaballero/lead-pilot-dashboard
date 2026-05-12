@@ -10,12 +10,26 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Renderiza el hilo completo de la conversacion entre Consultoria.io y el lead.
+ * Forma del snapshot que guarda WF02 v2 en pipeline.thread_snapshot:
+ * [{ type, seq, time, subject, body_text }]
  *
- * Fuente: Smartlead API (cold email + replies + nuestros sends).
- * Cache: la response del serverFn no se cachea explicitamente por nosotros, pero
- * react-router/tanstack-start mantiene el estado del componente abierto, asi que
- * abrir-cerrar-abrir el caso re-fetcha (esperado para mantener freshness).
+ * Cuando se le pasa como prop, ConversationThread renderiza desde aquí sin
+ * llamar a Smartlead (0 latencia, datos sellados en el momento de la ingesta).
+ */
+export type ThreadSnapshotMessage = {
+  type?: string;
+  seq?: number | null;
+  time?: string | null;
+  subject?: string | null;
+  body_text?: string;
+};
+
+/**
+ * Renderiza el hilo de la conversación.
+ *
+ * Estrategia de datos (en orden de preferencia):
+ *  1. snapshot prop (datos del pipeline row, instantáneo)
+ *  2. fallback a Smartlead live fetch (cold email + replies + sends)
  *
  * Modo compacto (defaultCompact=true): muestra solo el ultimo REPLY del lead
  * + el ultimo SENT nuestro. Para Triage donde el SDR necesita decidir rapido
@@ -23,9 +37,13 @@ import { cn } from "@/lib/utils";
  */
 export function ConversationThread({
   smartleadLeadId,
+  snapshot,
+  leadEmail,
   defaultCompact = false,
 }: {
   smartleadLeadId: string | number | null | undefined;
+  snapshot?: ThreadSnapshotMessage[] | null;
+  leadEmail?: string | null;
   defaultCompact?: boolean;
 }) {
   const fetchFn = useServerFn(getSmartleadThread);
@@ -33,8 +51,42 @@ export function ConversationThread({
   const [loading, setLoading] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const [compact, setCompact] = useState(defaultCompact);
+  const hasSnapshot = Array.isArray(snapshot) && snapshot.length > 0;
 
   useEffect(() => {
+    // Si tenemos snapshot, construimos el thread localmente — sin red.
+    if (hasSnapshot) {
+      const messages: SmartleadMessage[] = (snapshot ?? []).map((s) => ({
+        type: (s.type as "SENT" | "REPLY") ?? "SENT",
+        time: s.time ?? null,
+        subject: s.subject ?? null,
+        email_seq_number: s.seq ?? null,
+        // body_text del snapshot ya viene plain-text (HTML stripped en ingesta).
+        // Lo metemos como email_body para que MessageBubble lo trate igual.
+        // stripEmailHtml es no-op sobre texto plano.
+        email_body: s.body_text ?? "",
+        message_id: null,
+        from: null,
+        to: leadEmail ?? null,
+      } as SmartleadMessage));
+      // Ordenar por time desc (Smartlead las devuelve así)
+      messages.sort((a, b) => {
+        const ta = a.time ? Date.parse(a.time) : 0;
+        const tb = b.time ? Date.parse(b.time) : 0;
+        return tb - ta;
+      });
+      setThread({
+        ok: true,
+        campaign_id: null,
+        campaign_name: null,
+        lead_email: leadEmail ?? null,
+        messages,
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Fallback: si no hay snapshot, fetch a Smartlead
     if (!smartleadLeadId) {
       setThread(null);
       return;
@@ -63,12 +115,12 @@ export function ConversationThread({
     return () => {
       cancelled = true;
     };
-  }, [smartleadLeadId, fetchFn]);
+  }, [smartleadLeadId, fetchFn, hasSnapshot, snapshot, leadEmail]);
 
-  if (!smartleadLeadId) {
+  if (!smartleadLeadId && !hasSnapshot) {
     return (
       <div className="rounded-md border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
-        Sin smartlead_lead_id — no podemos cargar el hilo.
+        Sin smartlead_lead_id y sin snapshot — no podemos cargar el hilo.
       </div>
     );
   }

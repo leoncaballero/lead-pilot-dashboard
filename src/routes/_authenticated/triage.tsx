@@ -1510,6 +1510,8 @@ function CaseDetail({
           </h3>
           <ConversationThread
             smartleadLeadId={c.smartlead_lead_id ?? null}
+            snapshot={c.thread_snapshot ?? null}
+            leadEmail={c.lead_email ?? null}
             defaultCompact
           />
         </div>
