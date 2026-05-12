@@ -37,17 +37,33 @@ export const DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE: Record<PromptType, number> = {
   validator: 2048,
 };
 
+/**
+ * Subgroup: sub-bifurcación dentro de un segmento. Hoy solo aplica a MEGA:
+ * - 'no_store': lead sin evidencia de tienda online
+ * - 'has_store': lead con evidencia de tienda online
+ * - null: default del segmento (catch-all)
+ *
+ * Para otros segmentos (Genesis, etc.) siempre null por ahora.
+ */
+export type Subgroup = "no_store" | "has_store" | null;
+export const SUBGROUP_VALUES_MEGA: Array<Exclude<Subgroup, null>> = ["no_store", "has_store"];
+
 export type PromptVersion = {
   id: string;
   prompt_type: PromptType;
   segmento: Segmento;
   turn_type: TurnType;
+  subgroup: Subgroup;
   version: string;
   prompt_system: string;
   model: string;
   temperature: number | null;
   max_tokens: number | null;
   is_active: boolean;
+  /** Si true, este prompt puede activar el auto-send sin revisión humana
+   *  cuando el validator devuelve score >= 95 y no errores críticos.
+   *  Por defecto false — el SDR revisa todo. */
+  auto_send_enabled: boolean;
   description: string | null;
   notes: string | null;
   created_by: string | null;
@@ -122,6 +138,7 @@ export const createPromptVersion = createServerFn({ method: "POST" })
       prompt_type: PromptType;
       segmento: Segmento;
       turn_type: TurnType;
+      subgroup?: Subgroup;
       prompt_system: string;
       model?: string;
       temperature?: number;
@@ -129,17 +146,25 @@ export const createPromptVersion = createServerFn({ method: "POST" })
       description?: string;
       notes?: string;
       setActive: boolean;
+      auto_send_enabled?: boolean;
     }) => data
   )
   .handler(async ({ data }) => {
+    const subgroup = data.subgroup ?? null;
     const filterParams = new URLSearchParams({
       prompt_type: `eq.${data.prompt_type}`,
       segmento: `eq.${data.segmento}`,
       turn_type: `eq.${data.turn_type}`,
-      select: "version,model,temperature,max_tokens",
+      select: "version,model,temperature,max_tokens,subgroup",
       order: "created_at.desc",
       limit: "100",
     });
+    // Filtro por subgroup: si subgroup es null, filtramos las que también lo tienen null (is.null)
+    if (subgroup === null) {
+      filterParams.append("subgroup", "is.null");
+    } else {
+      filterParams.append("subgroup", `eq.${subgroup}`);
+    }
     const existing = (await pgrest(`${TABLE}?${filterParams.toString()}`, {
       method: "GET",
     })) as Array<{ version: string; model: string; temperature: number | null; max_tokens: number | null }>;
@@ -148,11 +173,14 @@ export const createPromptVersion = createServerFn({ method: "POST" })
     const fallbackTemplate = existing[0];
 
     if (data.setActive && existing.length > 0) {
+      // Desactivar otras versiones del MISMO (prompt_type, segmento, turn_type, subgroup)
       const deactivateParams = new URLSearchParams({
         prompt_type: `eq.${data.prompt_type}`,
         segmento: `eq.${data.segmento}`,
         turn_type: `eq.${data.turn_type}`,
       });
+      if (subgroup === null) deactivateParams.append("subgroup", "is.null");
+      else deactivateParams.append("subgroup", `eq.${subgroup}`);
       await pgrest(`${TABLE}?${deactivateParams.toString()}`, {
         method: "PATCH",
         prefer: "return=minimal",
@@ -168,12 +196,14 @@ export const createPromptVersion = createServerFn({ method: "POST" })
           prompt_type: data.prompt_type,
           segmento: data.segmento,
           turn_type: data.turn_type,
+          subgroup: subgroup,
           version: nextVersion,
           prompt_system: data.prompt_system,
           model: data.model ?? fallbackTemplate?.model ?? "claude-sonnet-4-6",
           temperature: data.temperature ?? fallbackTemplate?.temperature ?? 0,
           max_tokens: data.max_tokens ?? fallbackTemplate?.max_tokens ?? 2048,
           is_active: data.setActive,
+          auto_send_enabled: data.auto_send_enabled ?? false,
           description: data.description ?? null,
           notes: data.notes ?? null,
         },
@@ -185,15 +215,15 @@ export const createPromptVersion = createServerFn({ method: "POST" })
 
 /**
  * Activar una versión existente. Desactiva todas las otras de la misma
- * combinación (prompt_type, segmento, turn_type) y activa esta.
+ * combinación (prompt_type, segmento, turn_type, subgroup) y activa esta.
  */
 export const activatePromptVersion = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const targetRows = (await pgrest(
-      `${TABLE}?id=eq.${encodeURIComponent(data.id)}&select=prompt_type,segmento,turn_type`,
+      `${TABLE}?id=eq.${encodeURIComponent(data.id)}&select=prompt_type,segmento,turn_type,subgroup`,
       { method: "GET" }
-    )) as Array<{ prompt_type: string; segmento: string; turn_type: string }>;
+    )) as Array<{ prompt_type: string; segmento: string; turn_type: string; subgroup: string | null }>;
     if (!targetRows || targetRows.length === 0) {
       throw new Error(`Prompt version ${data.id} not found`);
     }
@@ -204,6 +234,8 @@ export const activatePromptVersion = createServerFn({ method: "POST" })
       segmento: `eq.${target.segmento}`,
       turn_type: `eq.${target.turn_type}`,
     });
+    if (target.subgroup === null) deactivateParams.append("subgroup", "is.null");
+    else deactivateParams.append("subgroup", `eq.${target.subgroup}`);
     await pgrest(`${TABLE}?${deactivateParams.toString()}`, {
       method: "PATCH",
       prefer: "return=minimal",
@@ -213,6 +245,20 @@ export const activatePromptVersion = createServerFn({ method: "POST" })
       method: "PATCH",
       prefer: "return=minimal",
       body: JSON.stringify({ is_active: true, updated_at: new Date().toISOString() }),
+    });
+    return { ok: true };
+  });
+
+/**
+ * Toggle auto_send_enabled de una versión. Útil para kill-switch rápido.
+ */
+export const setPromptAutoSend = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string; auto_send_enabled: boolean }) => data)
+  .handler(async ({ data }) => {
+    await pgrest(`${TABLE}?id=eq.${encodeURIComponent(data.id)}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      body: JSON.stringify({ auto_send_enabled: data.auto_send_enabled, updated_at: new Date().toISOString() }),
     });
     return { ok: true };
   });

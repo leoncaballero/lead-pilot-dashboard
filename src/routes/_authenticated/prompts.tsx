@@ -20,6 +20,7 @@ import {
   listPrompts,
   createPromptVersion,
   activatePromptVersion,
+  setPromptAutoSend,
   suggestPromptImprovements,
   refinePromptWithFeedback,
   evalPrompt,
@@ -28,12 +29,14 @@ import {
   PROMPT_TYPE_VALUES,
   SEGMENTO_VALUES,
   TURN_TYPE_VALUES,
+  SUBGROUP_VALUES_MEGA,
   DEFAULT_MODELS_BY_PROMPT_TYPE,
   DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE,
   type PromptVersion,
   type PromptType,
   type Segmento,
   type TurnType,
+  type Subgroup,
   type SuggestPromptResponse,
   type ConversationTurn,
   type EvalTestCase,
@@ -615,6 +618,7 @@ function PromptsPage() {
     prompt_type: PromptType;
     segmento: Segmento;
     turn_type: TurnType;
+    subgroup?: Subgroup;
   } | null>(null);
   const [refining, setRefining] = useState<PromptVersion | null>(null);
   const [evaluating, setEvaluating] = useState<PromptVersion | null>(null);
@@ -624,6 +628,7 @@ function PromptsPage() {
   const refineFn = useServerFn(refinePromptWithFeedback);
   const evalFn = useServerFn(evalPrompt);
   const samplesFn = useServerFn(getEvalSamples);
+  const autoSendFn = useServerFn(setPromptAutoSend);
 
   // Combos existentes — usado por el dialog de crear nuevo para mostrar duplicados
   const existingCombos = useMemo(() => {
@@ -638,12 +643,14 @@ function PromptsPage() {
     prompt_type: PromptType;
     segmento: Segmento;
     turn_type: TurnType;
+    subgroup?: Subgroup;
     prompt_system: string;
     description?: string;
     model?: string;
     temperature?: number;
     max_tokens?: number;
     setActive: boolean;
+    auto_send_enabled?: boolean;
   }) {
     setBusy(true);
     setErrorMsg(null);
@@ -693,11 +700,22 @@ function PromptsPage() {
 
   // Matriz del turn seleccionado: por segmento × prompt_type
   const matrixSegments = useMemo<Segmento[]>(() => ["MEGA", "Genesis", "Prosperitas"], []);
+  // cellByKey indexa SOLO los grupos default (subgroup=null). Los subgroups
+  // específicos (MEGA no_store / has_store) se muestran en un panel separado.
   const cellByKey = useMemo(() => {
     const m = new Map<string, Group>();
-    for (const g of groups) m.set(`${g.turn_type}|${g.prompt_type}|${g.segmento}`, g);
+    for (const g of groups) {
+      if (g.subgroup !== null) continue;
+      m.set(`${g.turn_type}|${g.prompt_type}|${g.segmento}`, g);
+    }
     return m;
   }, [groups]);
+
+  // Grupos de subgroups (no default) para mostrar en un panel separado abajo
+  const subgroupGroups = useMemo(
+    () => groups.filter((g) => g.subgroup !== null),
+    [groups]
+  );
 
   function getCell(turn: TurnType, type: PromptType, seg: Segmento): Group | null {
     return cellByKey.get(`${turn}|${type}|${seg}`) ?? null;
@@ -892,6 +910,37 @@ function PromptsPage() {
                 prompt_type: type,
                 segmento: seg,
                 turn_type: selectedTurn,
+              });
+              setCreatingNew(true);
+            }}
+          />
+
+          {/* Variantes MEGA (subgroups) — debajo de la matriz */}
+          <MegaVariantsPanel
+            variants={subgroupGroups.filter((g) => g.turn_type === selectedTurn)}
+            selectedTurn={selectedTurn}
+            busy={busy}
+            onView={(p) => setViewing(p)}
+            onEdit={(p) => setEditing(p)}
+            onEvaluate={(p) => setEvaluating(p)}
+            onRefine={(p) => setRefining(p)}
+            onAutoSendToggle={async (p, enabled) => {
+              setBusy(true);
+              try {
+                await autoSendFn({ data: { id: p.id, auto_send_enabled: enabled } });
+                await router.invalidate();
+              } catch (e) {
+                setErrorMsg(e instanceof Error ? e.message : "Error toggle auto-send");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            onCreate={() => {
+              setCreatePrefill({
+                prompt_type: "generator",
+                segmento: "MEGA",
+                turn_type: selectedTurn,
+                subgroup: "no_store",
               });
               setCreatingNew(true);
             }}
@@ -1776,6 +1825,165 @@ function EvalResultCard({
   );
 }
 
+function MegaVariantsPanel({
+  variants,
+  selectedTurn,
+  busy,
+  onView,
+  onEdit,
+  onEvaluate,
+  onRefine,
+  onAutoSendToggle,
+  onCreate,
+}: {
+  variants: Group[];
+  selectedTurn: TurnType;
+  busy: boolean;
+  onView: (p: PromptVersion) => void;
+  onEdit: (p: PromptVersion) => void;
+  onEvaluate: (p: PromptVersion) => void;
+  onRefine: (p: PromptVersion) => void;
+  onAutoSendToggle: (p: PromptVersion, enabled: boolean) => Promise<void>;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+          Variantes MEGA (subgroups) · {TURN_TYPE_LABELS[selectedTurn] ?? selectedTurn}
+        </h2>
+        <Button size="sm" variant="outline" onClick={onCreate} disabled={busy}>
+          + Crear variante MEGA no_store
+        </Button>
+      </div>
+      {variants.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic">
+          Sin variantes específicas para este turn. Para auto-send a leads MEGA sin tienda,
+          crea un Generator con subgroup "no_store" y marca "🤖 Auto-send sin revisión humana".
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {variants.map((g) => {
+            const a = g.active;
+            const autoSend = a?.auto_send_enabled ?? false;
+            return (
+              <div
+                key={g.key}
+                className={cn(
+                  "rounded border p-2.5",
+                  autoSend && "border-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                      {PROMPT_TYPE_LABELS[g.prompt_type]}
+                    </Badge>
+                    <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                      {g.segmento}
+                    </Badge>
+                    <Badge variant="secondary" className="h-4 px-1 text-[9px]">
+                      {g.subgroup}
+                    </Badge>
+                    {autoSend && (
+                      <Badge className="h-4 px-1.5 text-[9px] bg-emerald-600 hover:bg-emerald-600">
+                        🤖 Auto-send ON
+                      </Badge>
+                    )}
+                    {a && (
+                      <span className="font-mono text-xs ml-1">{a.version}</span>
+                    )}
+                  </div>
+                  {a && (
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => onEvaluate(a)}
+                        disabled={busy}
+                      >
+                        🧪 Evaluar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => onRefine(a)}
+                        disabled={busy}
+                      >
+                        💬 Refinar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => onEdit(a)}
+                        disabled={busy}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={autoSend ? "destructive" : "default"}
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => onAutoSendToggle(a, !autoSend)}
+                        disabled={busy}
+                        title={
+                          autoSend
+                            ? "Desactivar auto-send (vuelve a SDR review)"
+                            : "Activar auto-send (envía solo cuando score ≥ 95)"
+                        }
+                      >
+                        {autoSend ? "Apagar auto-send" : "Encender auto-send"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {a ? (
+                  <>
+                    <div className="text-[11px] text-muted-foreground mt-1">
+                      {a.model.replace("claude-", "")} · temp {a.temperature ?? 0} · max {a.max_tokens ?? "?"}
+                      {a.description && <> · <span className="italic">{a.description}</span></>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onView(a)}
+                      className="text-[10px] underline text-muted-foreground hover:text-foreground mt-0.5"
+                    >
+                      Ver prompt completo →
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground italic mt-1">
+                    Sin versión activa para este subgroup
+                  </div>
+                )}
+                {g.history.length > 0 && (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer text-[10px] text-muted-foreground">
+                      {g.history.length} versión{g.history.length === 1 ? "" : "es"} anterior{g.history.length === 1 ? "" : "es"}
+                    </summary>
+                    <ul className="mt-1 space-y-0.5">
+                      {g.history.map((p) => (
+                        <li key={p.id} className="text-[10px] text-muted-foreground border-l-2 border-muted pl-2 flex items-center gap-2">
+                          <span className="font-mono">{p.version}</span>
+                          <span>{p.description ?? "—"}</span>
+                          <span className="ml-auto">{formatTime(p.updated_at)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CreateNewDialog({
   existingCombos,
   existingPrompts,
@@ -1786,28 +1994,32 @@ function CreateNewDialog({
 }: {
   existingCombos: Set<string>;
   existingPrompts: PromptVersion[];
-  prefill?: { prompt_type: PromptType; segmento: Segmento; turn_type: TurnType };
+  prefill?: { prompt_type: PromptType; segmento: Segmento; turn_type: TurnType; subgroup?: Subgroup };
   onClose: () => void;
   onSave: (input: {
     prompt_type: PromptType;
     segmento: Segmento;
     turn_type: TurnType;
+    subgroup?: Subgroup;
     prompt_system: string;
     description?: string;
     model?: string;
     temperature?: number;
     max_tokens?: number;
     setActive: boolean;
+    auto_send_enabled?: boolean;
   }) => Promise<void>;
   busy: boolean;
 }) {
   const initialPromptType = prefill?.prompt_type ?? "generator";
   const initialSegmento = prefill?.segmento ?? "Genesis";
   const initialTurnType = prefill?.turn_type ?? "turn1";
+  const initialSubgroup: Subgroup = prefill?.subgroup ?? null;
 
   const [promptType, setPromptType] = useState<PromptType>(initialPromptType);
   const [segmento, setSegmento] = useState<Segmento>(initialSegmento);
   const [turnType, setTurnType] = useState<TurnType>(initialTurnType);
+  const [subgroup, setSubgroup] = useState<Subgroup>(initialSubgroup);
   const [text, setText] = useState("");
   const [description, setDescription] = useState("");
   const [model, setModel] = useState<string>(DEFAULT_MODELS_BY_PROMPT_TYPE[initialPromptType]);
@@ -1816,7 +2028,13 @@ function CreateNewDialog({
     String(DEFAULT_MAX_TOKENS_BY_PROMPT_TYPE[initialPromptType])
   );
   const [setActive, setSetActive] = useState(true);
+  const [autoSendEnabled, setAutoSendEnabled] = useState(false);
   const [copyFrom, setCopyFrom] = useState<string>("");
+
+  // Si se cambia segmento a algo distinto de MEGA, subgroup vuelve a null
+  useEffect(() => {
+    if (segmento !== "MEGA" && subgroup !== null) setSubgroup(null);
+  }, [segmento, subgroup]);
 
   // Si vino un prefill y existe un prompt activo en esa misma combinación
   // pero de otro segmento (típicamente MEGA), preseleccionarlo como "Copiar de…"
@@ -2035,6 +2253,31 @@ function CreateNewDialog({
             />
           </div>
 
+          {segmento === "MEGA" && (
+            <div className="rounded border bg-muted/20 p-3 space-y-2">
+              <Label className="text-xs uppercase font-semibold tracking-wider">
+                Subgroup MEGA (bifurcación por tienda online)
+              </Label>
+              <select
+                value={subgroup ?? ""}
+                onChange={(e) => setSubgroup((e.target.value || null) as Subgroup)}
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">default (catch-all MEGA, sin bifurcar)</option>
+                {SUBGROUP_VALUES_MEGA.map((s) => (
+                  <option key={s} value={s}>
+                    {s === "no_store" ? "no_store — lead SIN tienda online" : "has_store — lead CON tienda online"}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-muted-foreground">
+                Si eliges un subgroup, WF02 v2 usará este prompt SOLO cuando la
+                detección de "tienda online" coincida. Si default, este prompt es
+                el catch-all para MEGA.
+              </p>
+            </div>
+          )}
+
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -2044,6 +2287,28 @@ function CreateNewDialog({
             />
             Activar inmediatamente (los workflows lo usarán en la próxima ejecución)
           </label>
+
+          {promptType === "generator" && (
+            <label className="flex items-start gap-2 text-sm rounded border border-amber-300 bg-amber-50/40 p-2 dark:border-amber-700 dark:bg-amber-950/20 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoSendEnabled}
+                onChange={(e) => setAutoSendEnabled(e.target.checked)}
+                className="h-4 w-4 mt-0.5"
+              />
+              <span className="flex-1">
+                <span className="font-medium text-amber-900 dark:text-amber-200">
+                  🤖 Auto-send sin revisión humana
+                </span>
+                <span className="block text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                  Cuando el Validator devuelva score ≥ 95 y sin errores críticos,
+                  la respuesta se envía sola al lead. Sin paso por /triage. Recomendado
+                  solo cuando el prompt esté maduro (probado en /eval contra varios
+                  samples). Se puede desactivar después desde el detail panel.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
@@ -2055,12 +2320,14 @@ function CreateNewDialog({
                 prompt_type: promptType,
                 segmento,
                 turn_type: turnType,
+                subgroup: segmento === "MEGA" ? subgroup : null,
                 prompt_system: text,
                 description: description || undefined,
                 model,
                 temperature: parseFloat(temperature) || 0,
                 max_tokens: parseInt(maxTokens, 10) || 2048,
                 setActive,
+                auto_send_enabled: promptType === "generator" ? autoSendEnabled : false,
               })
             }
             disabled={busy || !canSave}
@@ -2292,6 +2559,7 @@ type Group = {
   prompt_type: PromptType;
   segmento: Segmento;
   turn_type: TurnType;
+  subgroup: Subgroup;
   active: PromptVersion | null;
   history: PromptVersion[];
 };
@@ -2299,7 +2567,8 @@ type Group = {
 function groupPrompts(prompts: PromptVersion[]): Group[] {
   const map = new Map<string, Group>();
   for (const p of prompts) {
-    const key = `${p.turn_type}|${p.prompt_type}|${p.segmento}`;
+    const sg = p.subgroup ?? null;
+    const key = `${p.turn_type}|${p.prompt_type}|${p.segmento}|${sg ?? '_'}`;
     let g = map.get(key);
     if (!g) {
       g = {
@@ -2307,6 +2576,7 @@ function groupPrompts(prompts: PromptVersion[]): Group[] {
         prompt_type: p.prompt_type,
         segmento: p.segmento,
         turn_type: p.turn_type,
+        subgroup: sg,
         active: null,
         history: [],
       };
