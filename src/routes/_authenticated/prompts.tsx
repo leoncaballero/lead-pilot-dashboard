@@ -1104,6 +1104,25 @@ function PromptsPage() {
                 setBusy(false);
               }
             }}
+            onAutoSendMinScoreChange={async (p, min_score) => {
+              setBusy(true);
+              try {
+                await autoSendFn({
+                  data: {
+                    id: p.id,
+                    auto_send_enabled: p.auto_send_enabled,
+                    auto_send_min_score: min_score,
+                  },
+                });
+                await router.invalidate();
+              } catch (e) {
+                setErrorMsg(
+                  e instanceof Error ? e.message : "Error actualizando min_score"
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
             onCreate={() => {
               setCreatePrefill({
                 prompt_type: "generator",
@@ -1994,6 +2013,52 @@ function EvalResultCard({
   );
 }
 
+function MinScoreEditor({
+  initial,
+  disabled,
+  onSave,
+}: {
+  initial: number;
+  disabled: boolean;
+  onSave: (n: number) => Promise<void>;
+}) {
+  const [val, setVal] = useState(String(initial));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setVal(String(initial));
+  }, [initial]);
+  async function commit() {
+    const n = parseInt(val, 10);
+    if (Number.isNaN(n) || n === initial) {
+      setVal(String(initial));
+      return;
+    }
+    const clamped = Math.max(0, Math.min(100, n));
+    setSaving(true);
+    try {
+      await onSave(clamped);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <input
+      type="number"
+      min="0"
+      max="100"
+      step="1"
+      value={val}
+      disabled={disabled || saving}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      className="h-6 w-14 rounded border border-emerald-300 dark:border-emerald-700 bg-background px-1.5 text-[11px] font-mono tabular-nums"
+    />
+  );
+}
+
 function MegaVariantsPanel({
   variants,
   selectedTurn,
@@ -2003,6 +2068,7 @@ function MegaVariantsPanel({
   onEvaluate,
   onRefine,
   onAutoSendToggle,
+  onAutoSendMinScoreChange,
   onCreate,
 }: {
   variants: Group[];
@@ -2013,6 +2079,7 @@ function MegaVariantsPanel({
   onEvaluate: (p: PromptVersion) => void;
   onRefine: (p: PromptVersion) => void;
   onAutoSendToggle: (p: PromptVersion, enabled: boolean) => Promise<void>;
+  onAutoSendMinScoreChange: (p: PromptVersion, min_score: number) => Promise<void>;
   onCreate: () => void;
 }) {
   return (
@@ -2056,7 +2123,7 @@ function MegaVariantsPanel({
                     </Badge>
                     {autoSend && (
                       <Badge className="h-4 px-1.5 text-[9px] bg-emerald-600 hover:bg-emerald-600">
-                        🤖 Auto-send ON
+                        🤖 Auto-send ON (≥{a?.auto_send_min_score ?? 95})
                       </Badge>
                     )}
                     {a && (
@@ -2101,7 +2168,9 @@ function MegaVariantsPanel({
                         title={
                           autoSend
                             ? "Desactivar auto-send (vuelve a SDR review)"
-                            : "Activar auto-send (envía solo cuando score ≥ 95)"
+                            : `Activar auto-send (envía solo cuando score ≥ ${
+                                a?.auto_send_min_score ?? 95
+                              })`
                         }
                       >
                         {autoSend ? "Apagar auto-send" : "Encender auto-send"}
@@ -2115,6 +2184,21 @@ function MegaVariantsPanel({
                       {a.model.replace("claude-", "")} · temp {a.temperature ?? 0} · max {a.max_tokens ?? "?"}
                       {a.description && <> · <span className="italic">{a.description}</span></>}
                     </div>
+                    {autoSend && (
+                      <div className="mt-1.5 flex items-center gap-2 text-[11px] rounded bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/60 px-2 py-1">
+                        <span className="text-emerald-900 dark:text-emerald-200">
+                          Threshold de auto-send: score validator ≥
+                        </span>
+                        <MinScoreEditor
+                          initial={a.auto_send_min_score ?? 95}
+                          disabled={busy}
+                          onSave={(n) => onAutoSendMinScoreChange(a, n)}
+                        />
+                        <span className="text-emerald-800/80 dark:text-emerald-300/80 italic">
+                          (bajar = liberar más volumen; subir = más conservador)
+                        </span>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => onView(a)}
