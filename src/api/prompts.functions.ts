@@ -64,6 +64,10 @@ export type PromptVersion = {
    *  cuando el validator devuelve score >= 95 y no errores críticos.
    *  Por defecto false — el SDR revisa todo. */
   auto_send_enabled: boolean;
+  /** Peso de tráfico (0-100) cuando hay varias versiones activas del mismo combo.
+   *  Routing en n8n hace weighted random según este valor.
+   *  Default 100 = "toma todo el tráfico" si no hay competencia. */
+  traffic_weight: number;
   description: string | null;
   notes: string | null;
   created_by: string | null;
@@ -147,6 +151,10 @@ export const createPromptVersion = createServerFn({ method: "POST" })
       notes?: string;
       setActive: boolean;
       auto_send_enabled?: boolean;
+      traffic_weight?: number;
+      /** Modo A/B: si true, NO desactiva versiones hermanas al activar esta.
+       *  Para iniciar un A/B sin matar la versión activa actual. */
+      ab_mode?: boolean;
     }) => data
   )
   .handler(async ({ data }) => {
@@ -172,8 +180,9 @@ export const createPromptVersion = createServerFn({ method: "POST" })
     const nextVersion = computeNextVersion(existing.map((e) => e.version));
     const fallbackTemplate = existing[0];
 
-    if (data.setActive && existing.length > 0) {
+    if (data.setActive && existing.length > 0 && !data.ab_mode) {
       // Desactivar otras versiones del MISMO (prompt_type, segmento, turn_type, subgroup)
+      // SALVO en ab_mode — en A/B conviven varias actives con traffic_weight reparto.
       const deactivateParams = new URLSearchParams({
         prompt_type: `eq.${data.prompt_type}`,
         segmento: `eq.${data.segmento}`,
@@ -187,6 +196,10 @@ export const createPromptVersion = createServerFn({ method: "POST" })
         body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
       });
     }
+
+    const trafficWeight = typeof data.traffic_weight === "number"
+      ? Math.max(0, Math.min(100, data.traffic_weight))
+      : 100;
 
     const inserted = (await pgrest(TABLE, {
       method: "POST",
@@ -204,6 +217,7 @@ export const createPromptVersion = createServerFn({ method: "POST" })
           max_tokens: data.max_tokens ?? fallbackTemplate?.max_tokens ?? 2048,
           is_active: data.setActive,
           auto_send_enabled: data.auto_send_enabled ?? false,
+          traffic_weight: trafficWeight,
           description: data.description ?? null,
           notes: data.notes ?? null,
         },
@@ -211,6 +225,37 @@ export const createPromptVersion = createServerFn({ method: "POST" })
     })) as PromptVersion[];
 
     return { ok: true, prompt: inserted?.[0] };
+  });
+
+/**
+ * Setea traffic_weight de varias versiones del mismo combo de forma atómica.
+ * Útil para iniciar un A/B (50/50, 80/20), ajustar split o promover ganador (100/0).
+ *
+ * - `weights[].id` debe existir y la versión debe estar is_active=true (o se activará si setActive=true)
+ * - La suma de weights NO se valida automáticamente; el routing acepta cualquier reparto
+ * - Si quieres "promover v2 al 100%": pasa [{id: v2_id, weight: 100, setActive: true}, {id: v1_id, weight: 0, setActive: false}]
+ */
+export const setTrafficWeights = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      weights: Array<{ id: string; weight: number; setActive?: boolean }>;
+    }) => data
+  )
+  .handler(async ({ data }) => {
+    for (const w of data.weights) {
+      const weight = Math.max(0, Math.min(100, Math.round(w.weight)));
+      const patch: Record<string, unknown> = {
+        traffic_weight: weight,
+        updated_at: new Date().toISOString(),
+      };
+      if (typeof w.setActive === "boolean") patch.is_active = w.setActive;
+      await pgrest(`${TABLE}?id=eq.${encodeURIComponent(w.id)}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: JSON.stringify(patch),
+      });
+    }
+    return { ok: true };
   });
 
 /**
@@ -961,7 +1006,12 @@ export type PromptVersionStats = {
 
 export const getPromptStats = createServerFn({ method: "GET" })
   .inputValidator(
-    (data: { prompt_type: PromptType; segmento: Segmento; turn_type: TurnType }) => data
+    (data: {
+      prompt_type: PromptType;
+      segmento: Segmento;
+      turn_type: TurnType;
+      subgroup?: Subgroup;
+    }) => data
   )
   .handler(async ({ data }): Promise<{ stats: PromptVersionStats[] }> => {
     // 1. Versiones de la combinación, en orden cronológico
@@ -969,39 +1019,247 @@ export const getPromptStats = createServerFn({ method: "GET" })
       prompt_type: `eq.${data.prompt_type}`,
       segmento: `eq.${data.segmento}`,
       turn_type: `eq.${data.turn_type}`,
-      select: "id,version,is_active,created_at",
+      select: "id,version,is_active,created_at,traffic_weight,subgroup",
       order: "created_at.asc",
     });
-    type VRow = { id: string; version: string; is_active: boolean; created_at: string | null };
+    if (data.subgroup !== undefined) {
+      if (data.subgroup === null) vParams.append("subgroup", "is.null");
+      else vParams.append("subgroup", `eq.${data.subgroup}`);
+    }
+    type VRow = {
+      id: string;
+      version: string;
+      is_active: boolean;
+      created_at: string | null;
+      traffic_weight?: number;
+      subgroup?: string | null;
+    };
     const versions = ((await pgrest(`${TABLE}?${vParams.toString()}`, {
       method: "GET",
     })) ?? []) as VRow[];
     if (versions.length === 0) return { stats: [] };
 
-    // 2. Pipeline rows de la misma (segmento, turn_type), creados desde el primer prompt
-    const earliest = versions[0].created_at ?? new Date(0).toISOString();
-    const pParams = new URLSearchParams({
-      segmento: `eq.${data.segmento}`,
-      turn_type: `eq.${data.turn_type}`,
-      select: "id,created_at",
+    // 2. Atribución exacta vía generator_version_id en pipeline (preferida).
+    // Para cada versión, fetcheamos pipeline rows que apuntan a ella exactamente.
+    // Si una versión NO tiene rows con generator_version_id seteado (legacy pre-A/B),
+    // caemos al heurístico de ventana temporal para esa versión.
+    const versionIds = versions.map((v) => v.id);
+    const idsList = versionIds.map((i) => `"${i}"`).join(",");
+    const exactParams = new URLSearchParams({
+      select: "id,created_at,generator_version_id",
       order: "created_at.asc",
-      limit: "5000",
+      limit: "10000",
     });
-    pParams.append("created_at", `gte.${earliest}`);
-    type PRow = { id: string; created_at: string };
-    const pipelineRows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
+    exactParams.append("generator_version_id", `in.(${idsList})`);
+    type PRowExact = { id: string; created_at: string; generator_version_id: string };
+    const exactRows = ((await pgrest(`${PIPELINE_TABLE}?${exactParams.toString()}`, {
       method: "GET",
-    })) ?? []) as PRow[];
+    })) ?? []) as PRowExact[];
 
-    // 3. Outcomes de esos pipeline_ids
-    const outcomeMap = await fetchOutcomeSetsForPipelines(pipelineRows.map((r) => r.id));
+    // Group by version id
+    const rowsByVersion = new Map<string, Array<{ id: string; created_at: string }>>();
+    for (const r of exactRows) {
+      const arr = rowsByVersion.get(r.generator_version_id) ?? [];
+      arr.push({ id: r.id, created_at: r.created_at });
+      rowsByVersion.set(r.generator_version_id, arr);
+    }
 
-    // 4. Para cada versión calculamos la ventana [v.created_at, v_next.created_at)
+    // Para versiones SIN exact rows (legacy), fallback a ventana temporal:
+    const versionsNeedingHeuristic = versions.filter((v) => !rowsByVersion.has(v.id));
+    let heuristicRows: PRowExact[] = [];
+    if (versionsNeedingHeuristic.length > 0) {
+      const earliest = versions[0].created_at ?? new Date(0).toISOString();
+      const pParams = new URLSearchParams({
+        segmento: `eq.${data.segmento}`,
+        turn_type: `eq.${data.turn_type}`,
+        select: "id,created_at,generator_version_id",
+        order: "created_at.asc",
+        limit: "5000",
+      });
+      pParams.append("created_at", `gte.${earliest}`);
+      pParams.append("generator_version_id", "is.null"); // solo legacy
+      heuristicRows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
+        method: "GET",
+      })) ?? []) as PRowExact[];
+    }
+
+    // 3. Outcomes para TODOS los pipeline_ids relevantes
+    const allIds = [...exactRows.map((r) => r.id), ...heuristicRows.map((r) => r.id)];
+    const outcomeMap = await fetchOutcomeSetsForPipelines(allIds);
+
+    // 4. Compute stats per version
     const stats: PromptVersionStats[] = versions.map((v, i) => {
-      return computeStatsForVersion(v, i, versions, pipelineRows, outcomeMap);
+      const exactRowsForV = rowsByVersion.get(v.id);
+      if (exactRowsForV && exactRowsForV.length > 0) {
+        // Atribución exacta — solo cuenta rows con generator_version_id = v.id
+        return computeStatsExact(v, exactRowsForV, outcomeMap);
+      }
+      // Fallback heurístico de ventana
+      return computeStatsForVersion(v, i, versions, heuristicRows, outcomeMap);
     });
 
     return { stats };
+  });
+
+function computeStatsExact(
+  v: { id: string; version: string; is_active: boolean; created_at: string | null },
+  rows: Array<{ id: string; created_at: string }>,
+  outcomes: OutcomeSets
+): PromptVersionStats {
+  let generated = 0;
+  let replied = 0;
+  let booked = 0;
+  let won = 0;
+  let lost = 0;
+  for (const r of rows) {
+    generated++;
+    if (outcomes.replied.has(r.id)) replied++;
+    if (outcomes.booked.has(r.id)) booked++;
+    if (outcomes.closed_won.has(r.id)) won++;
+    if (outcomes.closed_lost.has(r.id)) lost++;
+  }
+  return {
+    version_id: v.id,
+    version: v.version,
+    is_active: v.is_active,
+    created_at: v.created_at,
+    generated_count: generated,
+    replied_count: replied,
+    booked_count: booked,
+    closed_won_count: won,
+    closed_lost_count: lost,
+    reply_rate: generated > 0 ? replied / generated : 0,
+    booking_rate: generated > 0 ? booked / generated : 0,
+    win_rate: generated > 0 ? won / generated : 0,
+  };
+}
+
+/**
+ * Comparativa A/B: devuelve stats para todas las versiones ACTIVAS del combo
+ * (las que conviven con tráfico repartido). Incluye un flag "stat_significant"
+ * basado en threshold simple: cada arm tiene >= 30 rows y diff reply_rate >= 3 puntos.
+ */
+export type ABComparisonRow = PromptVersionStats & {
+  traffic_weight: number;
+  subgroup: string | null;
+};
+export type ABComparisonResult = {
+  combo: {
+    prompt_type: PromptType;
+    segmento: Segmento;
+    turn_type: TurnType;
+    subgroup: Subgroup;
+  };
+  versions: ABComparisonRow[];
+  stat_significant: boolean;
+  winner_version_id: string | null;
+  notes: string;
+};
+
+export const getABComparison = createServerFn({ method: "GET" })
+  .inputValidator(
+    (data: {
+      prompt_type: PromptType;
+      segmento: Segmento;
+      turn_type: TurnType;
+      subgroup?: Subgroup;
+    }) => data
+  )
+  .handler(async ({ data }): Promise<ABComparisonResult> => {
+    const subgroup = data.subgroup ?? null;
+    // Solo versiones ACTIVAS
+    const vParams = new URLSearchParams({
+      prompt_type: `eq.${data.prompt_type}`,
+      segmento: `eq.${data.segmento}`,
+      turn_type: `eq.${data.turn_type}`,
+      is_active: "eq.true",
+      select: "id,version,is_active,created_at,traffic_weight,subgroup",
+      order: "version.asc",
+    });
+    if (subgroup === null) vParams.append("subgroup", "is.null");
+    else vParams.append("subgroup", `eq.${subgroup}`);
+    type VRow = {
+      id: string;
+      version: string;
+      is_active: boolean;
+      created_at: string | null;
+      traffic_weight?: number;
+      subgroup?: string | null;
+    };
+    const versions = ((await pgrest(`${TABLE}?${vParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as VRow[];
+
+    if (versions.length === 0) {
+      return {
+        combo: { prompt_type: data.prompt_type, segmento: data.segmento, turn_type: data.turn_type, subgroup },
+        versions: [],
+        stat_significant: false,
+        winner_version_id: null,
+        notes: "No hay versiones activas en este combo.",
+      };
+    }
+
+    // Stats exactos por version_id
+    const idsList = versions.map((v) => `"${v.id}"`).join(",");
+    const pParams = new URLSearchParams({
+      select: "id,created_at,generator_version_id",
+      order: "created_at.asc",
+      limit: "10000",
+    });
+    pParams.append("generator_version_id", `in.(${idsList})`);
+    type PRow = { id: string; created_at: string; generator_version_id: string };
+    const rows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as PRow[];
+
+    const rowsByVersion = new Map<string, Array<{ id: string; created_at: string }>>();
+    for (const r of rows) {
+      const arr = rowsByVersion.get(r.generator_version_id) ?? [];
+      arr.push({ id: r.id, created_at: r.created_at });
+      rowsByVersion.set(r.generator_version_id, arr);
+    }
+    const outcomes = await fetchOutcomeSetsForPipelines(rows.map((r) => r.id));
+
+    const versionStats: ABComparisonRow[] = versions.map((v) => {
+      const arr = rowsByVersion.get(v.id) ?? [];
+      const s = computeStatsExact(v, arr, outcomes);
+      return {
+        ...s,
+        traffic_weight: typeof v.traffic_weight === "number" ? v.traffic_weight : 100,
+        subgroup: v.subgroup ?? null,
+      };
+    });
+
+    // Stat significance simple: cada arm tiene >= 30 rows Y diff reply_rate >= 3 puntos
+    let stat_significant = false;
+    let winner_version_id: string | null = null;
+    let notes = "";
+    if (versionStats.length < 2) {
+      notes = "Solo una versión activa — no hay A/B en curso.";
+    } else {
+      const minRows = Math.min(...versionStats.map((v) => v.generated_count));
+      const maxRate = Math.max(...versionStats.map((v) => v.reply_rate));
+      const minRate = Math.min(...versionStats.map((v) => v.reply_rate));
+      if (minRows < 30) {
+        notes = `Faltan más casos. La versión con menos data tiene ${minRows} generados (mínimo 30 por arm para considerar significativo).`;
+      } else if (maxRate - minRate < 0.03) {
+        notes = `Reply rate similar (diff ${((maxRate - minRate) * 100).toFixed(1)} pts). No hay ganador claro todavía.`;
+      } else {
+        stat_significant = true;
+        const winner = versionStats.reduce((a, b) => (a.reply_rate > b.reply_rate ? a : b));
+        winner_version_id = winner.version_id;
+        notes = `Versión ${winner.version} lidera con ${(winner.reply_rate * 100).toFixed(1)}% reply rate (n=${winner.generated_count}). Listo para promover.`;
+      }
+    }
+
+    return {
+      combo: { prompt_type: data.prompt_type, segmento: data.segmento, turn_type: data.turn_type, subgroup },
+      versions: versionStats,
+      stat_significant,
+      winner_version_id,
+      notes,
+    };
   });
 
 type OutcomeSets = {
