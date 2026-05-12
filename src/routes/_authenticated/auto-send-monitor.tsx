@@ -1,5 +1,6 @@
 import { createFileRoute, ErrorComponent, Link, useRouter } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
   type HumanReviewByScore,
   type TopCriticalError,
 } from "@/api/prompts.functions";
+import { approveQuick, rejectQuick } from "@/api/triage.functions";
 
 export const Route = createFileRoute("/_authenticated/auto-send-monitor")({
   loader: async () => await getAutoSendMonitor(),
@@ -45,17 +47,20 @@ function Pending() {
 }
 
 function Page() {
+  const router = useRouter();
   const data = Route.useLoaderData();
   const {
     candidates,
     generator_versions,
-    total_pending,
     score_distribution,
     threshold_scenarios,
     human_review_by_score,
     top_critical_errors,
     reviewed_total_14d,
   } = data;
+  const approveFn = useServerFn(approveQuick);
+  const rejectFn = useServerFn(rejectQuick);
+  const [pending, setPending] = useState<string | null>(null);
 
   // Agrupar candidatos por versión del generator
   const groupedByVersion = useMemo(() => {
@@ -69,39 +74,72 @@ function Page() {
     return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length);
   }, [candidates]);
 
-  const passRate = total_pending > 0 ? (candidates.length / total_pending) * 100 : 0;
+  async function handleApprove(id: string) {
+    setPending(id);
+    try {
+      const res = await approveFn({ data: { id } });
+      if (!res.ok) alert(`Enviar falló: ${res.error}`);
+      await router.invalidate();
+    } catch (e) {
+      alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function handleReject(id: string) {
+    setPending(id);
+    try {
+      const res = await rejectFn({ data: { id } });
+      if (!res.ok) alert(`Mover a triage falló: ${res.error}`);
+      await router.invalidate();
+    } catch (e) {
+      alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPending(null);
+    }
+  }
 
   return (
     <div className="space-y-6 p-4 max-w-7xl">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold flex items-center gap-2">
-          🤖 Auto-send Monitor
+          🚪 Quick-gate · Auto-send Monitor
         </h1>
         <p className="text-sm text-muted-foreground">
-          Casos que <strong>teóricamente pasarían</strong> el filtro de auto-send hoy (score
-          ≥ threshold de su versión + sin errores críticos). Si la versión correspondiente
-          tiene auto-send activado, estos casos se envían sin revisión. Si no, esperan en
-          /triage.
+          Casos MEGA sin tienda online con score ≥90 sin errores críticos.{" "}
+          <strong>NO entran a /triage por defecto.</strong> Decides Sí (envío
+          automático inmediato) o No (manda a /triage para revisión humana
+          normal). De aquí sale el ratio Sí/No que mide si el prompt está listo
+          para auto-send completo.
         </p>
       </header>
 
       {/* Stats top */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard
-          label="Candidatos auto-sendables"
+          label="🚪 Esperando tu Sí/No"
           value={candidates.length.toString()}
-          tone="emerald"
+          tone={candidates.length > 0 ? "emerald" : "muted"}
         />
         <StatCard
-          label="Total pending review (7d)"
-          value={total_pending.toString()}
+          label="Revisados con humano (14d)"
+          value={reviewed_total_14d.toString()}
           tone="muted"
+          hint="Total de casos con sdr_action — aprobados, editados o rechazados desde /triage o quick-gate."
         />
         <StatCard
-          label="Pass rate"
-          value={`${passRate.toFixed(0)}%`}
-          tone={passRate >= 50 ? "emerald" : passRate >= 25 ? "amber" : "red"}
-          hint="Si <25%, el threshold actual es muy estricto o el prompt produce muchos casos con errores. Si >70%, considera bajar el threshold para automatizar más."
+          label="Edit-rate 95+ (último indicador)"
+          value={(() => {
+            const b = human_review_by_score.find((x) => x.label === "95+");
+            return b ? `${(b.edit_rate * 100).toFixed(0)}%` : "—";
+          })()}
+          tone={(() => {
+            const b = human_review_by_score.find((x) => x.label === "95+");
+            if (!b) return "muted";
+            return b.edit_rate < 0.2 ? "emerald" : b.edit_rate < 0.4 ? "amber" : "red";
+          })()}
+          hint="Cuando este número baje a <20%, podemos activar auto-send full sin quick-gate."
         />
       </section>
 
@@ -129,16 +167,19 @@ function Page() {
       {/* 🔴 Top errores críticos del validator */}
       <TopErrorsSection errors={top_critical_errors} />
 
-      {/* Candidatos agrupados por versión */}
+      {/* Candidatos quick-gate — esperando tu Go/No-Go */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Candidatos a auto-send ({candidates.length})
+          🚪 Casos esperando decisión ({candidates.length})
         </h2>
         {candidates.length === 0 ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-            No hay candidatos que pasen los criterios actuales en los últimos 7 días.
+            Sin casos en quick-gate ahora mismo.
             <br />
-            Causas posibles: scores bajos, errores críticos del validator, o sin pipeline rows recientes.
+            <span className="text-xs italic">
+              Cuando entre un MEGA sin tienda con score ≥90 sin errores críticos,
+              aparecerá aquí esperando tu Sí/No.
+            </span>
           </div>
         ) : (
           groupedByVersion.map(([versionLabel, cands]) => (
@@ -148,19 +189,20 @@ function Page() {
                 <Badge variant="secondary" className="h-5 text-[10px]">
                   {cands.length} caso{cands.length === 1 ? "" : "s"}
                 </Badge>
-                {cands[0].gen_auto_send_enabled ? (
-                  <Badge className="h-5 text-[10px] bg-emerald-600 hover:bg-emerald-600">
-                    🤖 Auto-send ON
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="h-5 text-[10px]">
-                    Auto-send OFF — esperan en /triage
-                  </Badge>
-                )}
+                <Badge className="h-5 text-[10px] bg-blue-600 hover:bg-blue-600">
+                  🚪 Quick-gate
+                </Badge>
               </div>
               <div className="divide-y">
                 {cands.map((c) => (
-                  <CandidateRow key={c.pipeline_id} c={c} />
+                  <CandidateRow
+                    key={c.pipeline_id}
+                    c={c}
+                    pending={pending === c.pipeline_id}
+                    disabled={pending !== null && pending !== c.pipeline_id}
+                    onApprove={() => handleApprove(c.pipeline_id)}
+                    onReject={() => handleReject(c.pipeline_id)}
+                  />
                 ))}
               </div>
             </div>
@@ -242,44 +284,87 @@ function VersionConfigCard({ v }: { v: AutoSendVersionConfig }) {
   );
 }
 
-function CandidateRow({ c }: { c: AutoSendCandidate }) {
+function CandidateRow({
+  c,
+  pending,
+  disabled,
+  onApprove,
+  onReject,
+}: {
+  c: AutoSendCandidate;
+  pending: boolean;
+  disabled: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
   const score = c.score ?? 0;
   const ageMin = c.created_at
     ? Math.max(0, Math.floor((Date.now() - Date.parse(c.created_at)) / 60_000))
     : null;
   return (
-    <div className="px-3 py-2 grid grid-cols-12 gap-2 items-start text-sm">
-      <div className="col-span-3 min-w-0">
-        <div className="truncate font-medium">{c.lead_name || c.lead_email || "—"}</div>
-        <div className="text-[11px] text-muted-foreground truncate">{c.lead_email}</div>
-      </div>
-      <div className="col-span-1 text-center">
-        <div className="text-xs tabular-nums font-semibold">{score}</div>
-        <div className="text-[10px] text-muted-foreground">≥{c.gen_threshold}</div>
-      </div>
-      <div className="col-span-1 text-center">
-        {c.has_known_store === false ? (
-          <Badge variant="outline" className="h-4 text-[9px] bg-violet-50 dark:bg-violet-950/40">
-            sin tienda
+    <div className="px-4 py-3 space-y-3">
+      {/* Header: lead + meta */}
+      <div className="flex items-center justify-between gap-2 flex-wrap text-sm">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium truncate">
+            {c.lead_name || c.lead_email || "—"}
+          </div>
+          <div className="text-[11px] text-muted-foreground truncate">
+            {c.lead_email}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Badge className="h-5 text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 hover:bg-emerald-100">
+            score {score}
           </Badge>
-        ) : c.has_known_store === true ? (
-          <Badge variant="outline" className="h-4 text-[9px]">
-            con tienda
-          </Badge>
-        ) : null}
+          {c.has_known_store === false && (
+            <Badge variant="outline" className="h-5 text-[10px] bg-violet-50 dark:bg-violet-950/40">
+              sin tienda
+            </Badge>
+          )}
+          <span>{ageMin !== null ? `hace ${formatAge(ageMin)}` : "—"}</span>
+        </div>
       </div>
-      <div className="col-span-5 min-w-0">
-        <pre className="whitespace-pre-wrap text-[11px] leading-snug font-sans text-muted-foreground line-clamp-3">
-          {c.turn_1_generated ?? "(sin Turn 1)"}
-        </pre>
+
+      {/* Reply original del lead */}
+      {c.reply_original && (
+        <details className="rounded border bg-muted/30 px-2 py-1 text-[11px]">
+          <summary className="cursor-pointer text-muted-foreground">
+            Reply del lead
+          </summary>
+          <pre className="mt-1 whitespace-pre-wrap font-sans text-foreground/90 max-h-32 overflow-y-auto">
+            {c.reply_original}
+          </pre>
+        </details>
+      )}
+
+      {/* Turn 1 propuesto (lo que se enviaría si dices Sí) */}
+      <div className="rounded-md border bg-card p-3 text-sm leading-relaxed whitespace-pre-wrap">
+        {c.turn_1_generated ?? "(sin Turn 1 generado)"}
       </div>
-      <div className="col-span-2 text-right text-[11px] text-muted-foreground space-y-1">
-        <div>{ageMin !== null ? `hace ${formatAge(ageMin)}` : "—"}</div>
+
+      {/* Botones grandes Sí / No */}
+      <div className="flex gap-2 flex-wrap">
+        <Button
+          onClick={onApprove}
+          disabled={pending || disabled}
+          className="flex-1 h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+        >
+          {pending ? "Enviando…" : "✅ Sí, enviar tal cual"}
+        </Button>
+        <Button
+          onClick={onReject}
+          disabled={pending || disabled}
+          variant="outline"
+          className="flex-1 h-10 border-amber-300 text-amber-900 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-200 text-sm font-semibold"
+        >
+          {pending ? "Moviendo…" : "❌ No, a /triage"}
+        </Button>
         <Link
           to="/triage"
-          className="inline-block underline text-foreground hover:text-emerald-600"
+          className="self-center text-[11px] underline text-muted-foreground hover:text-foreground"
         >
-          Ver en /triage →
+          Abrir en /triage
         </Link>
       </div>
     </div>

@@ -1594,10 +1594,14 @@ export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
     const byVersionId = new Map<string, VRow>();
     for (const v of versions) byVersionId.set(v.id, v);
 
-    // 2. Pipeline rows pending_review recientes (últimos 7 días para acotar)
+    // 2. Pipeline rows en pending_quick_review (esperando Go/No-Go del operador).
+    // Estos casos NO entran a /triage por defecto; aparecen aquí para que el
+    // operador decida Sí (auto-envío) o No (mandar a triage normal). El filtro
+    // de criterios (score>=90, sin tienda, sin errores) ya lo hizo el WF02 v2;
+    // aquí solo leemos lo que ya está en quick_review.
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const pipelineParams = new URLSearchParams({
-      status: "eq.pending_review",
+      status: "eq.pending_quick_review",
       select:
         "id,lead_email,lead_name,segmento,has_known_store,turn_type,score,validation_output,generator_version_id,created_at,reply_original,turn_1_generated",
       order: "created_at.desc",

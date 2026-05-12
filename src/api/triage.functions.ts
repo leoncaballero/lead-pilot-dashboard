@@ -408,6 +408,63 @@ export const rejectCase = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Aprobación rápida ("Sí") desde /auto-send-monitor para casos en
+ * pending_quick_review (score>=90 + sin tienda + sin errores críticos).
+ *
+ * Estos casos NO entran a /triage por defecto — solo aparecen en el monitor
+ * para que el operador dé Go/No-Go rápido. Aquí significa Go: marca approved,
+ * sdr_action='approved_via_quick_gate' (distinguible de approved_as_is del
+ * triage normal en stats), y dispara el envío vía webhook n8n.
+ */
+export const approveQuick = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    // Cargar la row para guardar turn_1_generated como turn_1_final (consistencia
+    // con approveCase tradicional).
+    const rows = (await pgrest(
+      `${TABLE}?id=eq.${encodeURIComponent(data.id)}&select=turn_1_generated,status&limit=1`,
+      { method: "GET" }
+    )) as Array<{ turn_1_generated: string | null; status: string | null }>;
+    if (!rows?.[0]) return { ok: false, error: "Caso no encontrado" };
+    if (rows[0].status !== "pending_quick_review") {
+      return {
+        ok: false,
+        error: `El caso no está en pending_quick_review (status=${rows[0].status})`,
+      };
+    }
+    await updateCase(data.id, {
+      sdr_action: "approved_via_quick_gate",
+      sdr_user_id: null,
+      sdr_action_timestamp: new Date().toISOString(),
+      turn_1_final: rows[0].turn_1_generated ?? "",
+      status: "ready_to_send",
+    });
+    await logEvent(data.id, "turn_1_approved_via_quick_gate");
+    await triggerSendWebhook(data.id);
+    return { ok: true };
+  });
+
+/**
+ * Rechazo rápido ("No") desde /auto-send-monitor. NO marca el caso como
+ * rejected definitivo — solo lo desbloquea para que entre al flujo de
+ * triage humano normal (status='pending_review'). El SDR luego decide en
+ * /triage qué hacer (editar / aprobar / rechazar).
+ *
+ * Esto es la señal de "no me lo enviaría tal cual, dale una vuelta humana".
+ * Permite calcular el ratio Sí/No del monitor sin perder leads.
+ */
+export const rejectQuick = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await updateCase(data.id, {
+      status: "pending_review",
+      sdr_action_timestamp: new Date().toISOString(),
+    });
+    await logEvent(data.id, "quick_gate_sent_to_triage");
+    return { ok: true };
+  });
+
 export const deepReviewCase = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
   .handler(async ({ data }) => {
