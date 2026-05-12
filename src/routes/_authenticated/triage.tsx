@@ -1942,9 +1942,21 @@ function StoreClassifierControl({
     label: string;
     hint: string;
   }> = [
-    { value: true, label: "🛒 Tiene tienda", hint: "Lead con tienda online → enrutar al prompt has_store (catch-all si no existe específico)" },
-    { value: false, label: "🚫 Sin tienda", hint: "Lead sin tienda online → enrutar al prompt no_store (donde está el auto-send progresivo)" },
-    { value: null, label: "❓ Sin clasificar", hint: "Sin certeza → catch-all (subgroup=null), revisión humana" },
+    {
+      value: true,
+      label: "🛒 Tiene tienda",
+      hint: "Lead con tienda → segmento pasa a Genesis (empresa establecida) y usa el prompt Genesis.",
+    },
+    {
+      value: false,
+      label: "🚫 Sin tienda",
+      hint: "Lead sin tienda → segmento pasa a MEGA (aspiracional) y usa el prompt MEGA/no_store.",
+    },
+    {
+      value: null,
+      label: "❓ Sin clasificar",
+      hint: "Sin certeza → segmento se queda como está, usa el prompt catch-all del segmento actual.",
+    },
   ];
   return (
     <div className="rounded-md border bg-card/60 p-3 space-y-2">
@@ -1959,8 +1971,9 @@ function StoreClassifierControl({
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Cambiar aquí <strong>regenera el Turn 1</strong> con el prompt apropiado
-        al subgroup elegido. Útil si el detector automático se equivocó.
+        Cambiar aquí <strong>actualiza el segmento</strong> del lead (MEGA ↔ Genesis)
+        y <strong>regenera el Turn 1</strong> con el prompt apropiado.
+        Útil si el detector automático se equivocó.
       </p>
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt) => {
