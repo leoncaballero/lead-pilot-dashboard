@@ -274,6 +274,24 @@ function formatRel(min: number | null): string {
   return `hace ${h}h ${min % 60}m`;
 }
 
+function formatUpcomingMeeting(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const now = Date.now();
+  const diffMs = d.getTime() - now;
+  const diffHours = diffMs / 36e5;
+  // <24h: "hoy 18:30" / "mañana 10:00"; <7d: "jue 10:30"; resto: "14 mar"
+  const time = d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  if (diffHours < 24) {
+    const isTomorrow = d.getDate() !== new Date().getDate();
+    return isTomorrow ? `mañana ${time}` : `hoy ${time}`;
+  }
+  if (diffHours < 24 * 7) {
+    return `${d.toLocaleDateString("es-ES", { weekday: "short" })} ${time}`;
+  }
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+}
+
 const EDIT_REASONS = [
   "Halago disfrazado",
   "Jerga consultor",
@@ -1186,10 +1204,24 @@ function CaseListItem({
                   TIENDA SÍ
                 </span>
               )}
-              {c.lead_outcome === "booked" && (
+              {c.upcoming_meeting && (
+                <span
+                  className="inline-flex items-center justify-center rounded-sm bg-red-600 px-1.5 py-0 text-[10px] font-bold uppercase leading-none text-white shadow-sm"
+                  title={`Ya tiene reunión agendada${
+                    c.upcoming_meeting.title ? ` — ${c.upcoming_meeting.title}` : ""
+                  } el ${formatUpcomingMeeting(c.upcoming_meeting.start_time)}${
+                    c.upcoming_meeting.outcome_type === "booked_other"
+                      ? ". Fuente: canal externo, no atribuible al outbound."
+                      : ". Fuente: atribuible al outbound."
+                  } NO responder al lead.`}
+                >
+                  🗓 RX {formatUpcomingMeeting(c.upcoming_meeting.start_time)} · NO RESPONDER
+                </span>
+              )}
+              {c.lead_outcome === "booked" && !c.upcoming_meeting && (
                 <span
                   className="inline-flex items-center justify-center rounded-sm bg-amber-200 px-1 py-0 text-[9px] font-bold uppercase leading-none text-amber-900 dark:bg-amber-900/60 dark:text-amber-200"
-                  title="Lead ya reservó reunión — objetivo conseguido"
+                  title="Lead reservó reunión en algún momento — sin meeting futura agendada actualmente"
                 >
                   🗓 BOOKED
                 </span>
