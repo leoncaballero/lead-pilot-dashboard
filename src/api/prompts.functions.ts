@@ -1494,6 +1494,166 @@ export const listAllPromptStats = createServerFn({ method: "GET" }).handler(
   }
 );
 
+/**
+ * Auto-send Monitor: muestra qué pipeline rows TEÓRICAMENTE pasarían el filtro
+ * de auto-send hoy. Útil para revisar antes de mover el toggle a ON.
+ *
+ * Cumple criterios = el caso pasaría a `ready_to_send` si su versión de generator
+ * tuviese auto_send_enabled=true. Criterios (mismos que Compute final status
+ * del WF02 v2):
+ *   - status='pending_review' (no enviados aún)
+ *   - validation_output.score >= auto_send_min_score de la versión usada
+ *   - validation_output.errores_criticos.length === 0
+ *
+ * Cruza con prompt_versions vía generator_version_id para conocer el threshold
+ * exacto de cada caso. Las pipeline rows legacy sin generator_version_id se
+ * comparan contra threshold default 95.
+ */
+export type AutoSendCandidate = {
+  pipeline_id: string;
+  lead_email: string | null;
+  lead_name: string | null;
+  segmento: string | null;
+  has_known_store: boolean | null;
+  turn_type: string | null;
+  score: number | null;
+  errores_criticos: string[];
+  created_at: string | null;
+  reply_original: string | null;
+  turn_1_generated: string | null;
+  gen_version_label: string | null;
+  gen_subgroup: string | null;
+  gen_auto_send_enabled: boolean;
+  gen_threshold: number;
+};
+export type AutoSendVersionConfig = {
+  id: string;
+  segmento: string;
+  subgroup: string | null;
+  version: string;
+  auto_send_enabled: boolean;
+  auto_send_min_score: number;
+  candidates_today: number;
+};
+export type AutoSendMonitorResult = {
+  total_pending: number;
+  candidates: AutoSendCandidate[];
+  generator_versions: AutoSendVersionConfig[];
+};
+
+export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AutoSendMonitorResult> => {
+    // 1. Versiones activas de generator (necesitamos su threshold + flag)
+    const versionsParams = new URLSearchParams({
+      is_active: "eq.true",
+      prompt_type: "eq.generator",
+      select:
+        "id,segmento,subgroup,version,turn_type,auto_send_enabled,auto_send_min_score",
+    });
+    type VRow = {
+      id: string;
+      segmento: string;
+      subgroup: string | null;
+      version: string;
+      turn_type: string;
+      auto_send_enabled: boolean;
+      auto_send_min_score: number | null;
+    };
+    const versions = ((await pgrest(`${TABLE}?${versionsParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as VRow[];
+    const byVersionId = new Map<string, VRow>();
+    for (const v of versions) byVersionId.set(v.id, v);
+
+    // 2. Pipeline rows pending_review recientes (últimos 7 días para acotar)
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const pipelineParams = new URLSearchParams({
+      status: "eq.pending_review",
+      select:
+        "id,lead_email,lead_name,segmento,has_known_store,turn_type,score,validation_output,generator_version_id,created_at,reply_original,turn_1_generated",
+      order: "created_at.desc",
+      limit: "300",
+    });
+    pipelineParams.append("created_at", `gte.${since}`);
+    type PRow = {
+      id: string;
+      lead_email: string | null;
+      lead_name: string | null;
+      segmento: string | null;
+      has_known_store: boolean | null;
+      turn_type: string | null;
+      score: number | null;
+      validation_output: {
+        score?: number;
+        errores_criticos?: string[];
+      } | null;
+      generator_version_id: string | null;
+      created_at: string | null;
+      reply_original: string | null;
+      turn_1_generated: string | null;
+    };
+    const rows = ((await pgrest(`${PIPELINE_TABLE}?${pipelineParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as PRow[];
+
+    // 3. Filtrar candidatos
+    const DEFAULT_THRESHOLD = 95;
+    const candidates: AutoSendCandidate[] = [];
+    const todayCounter = new Map<string, number>();
+    const last24h = Date.now() - 24 * 60 * 60 * 1000;
+
+    for (const r of rows) {
+      const v = r.generator_version_id ? byVersionId.get(r.generator_version_id) : undefined;
+      const threshold = v?.auto_send_min_score ?? DEFAULT_THRESHOLD;
+      const score = r.score ?? r.validation_output?.score ?? null;
+      const errores = Array.isArray(r.validation_output?.errores_criticos)
+        ? r.validation_output!.errores_criticos!
+        : [];
+      const passes = score !== null && score >= threshold && errores.length === 0;
+      if (!passes) continue;
+      candidates.push({
+        pipeline_id: r.id,
+        lead_email: r.lead_email,
+        lead_name: r.lead_name,
+        segmento: r.segmento,
+        has_known_store: r.has_known_store,
+        turn_type: r.turn_type,
+        score,
+        errores_criticos: errores,
+        created_at: r.created_at,
+        reply_original: r.reply_original,
+        turn_1_generated: r.turn_1_generated,
+        gen_version_label: v ? `${v.segmento}/${v.subgroup ?? "—"}/${v.version}` : null,
+        gen_subgroup: v?.subgroup ?? null,
+        gen_auto_send_enabled: v?.auto_send_enabled ?? false,
+        gen_threshold: threshold,
+      });
+      // Counter para stats por versión (solo últimas 24h)
+      const createdMs = r.created_at ? Date.parse(r.created_at) : 0;
+      if (createdMs >= last24h && v) {
+        todayCounter.set(v.id, (todayCounter.get(v.id) ?? 0) + 1);
+      }
+    }
+
+    // 4. Resumen por versión
+    const generator_versions: AutoSendVersionConfig[] = versions.map((v) => ({
+      id: v.id,
+      segmento: v.segmento,
+      subgroup: v.subgroup,
+      version: v.version,
+      auto_send_enabled: v.auto_send_enabled,
+      auto_send_min_score: v.auto_send_min_score ?? DEFAULT_THRESHOLD,
+      candidates_today: todayCounter.get(v.id) ?? 0,
+    }));
+
+    return {
+      total_pending: rows.length,
+      candidates,
+      generator_versions,
+    };
+  }
+);
+
 function computeNextVersion(existing: string[]): string {
   if (existing.length === 0) return "v1.0";
   const nums = existing
