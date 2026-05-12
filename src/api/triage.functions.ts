@@ -64,6 +64,16 @@ export type TriageCase = {
    *  Cuando un lead tiene varios outcomes, prevalece el más informativo
    *  (closed_won > closed_lost > attended > no_show > booked > unsubscribe). */
   lead_outcome?: string | null;
+  /** Si el lead tiene una meeting agendada en el futuro (start_time > now),
+   *  exponemos los datos mínimos para mostrar la bandera "ya tiene reunión
+   *  próxima — no responder" en la tarjeta de Triage. Cubre tanto bookings
+   *  atribuibles (outcome=booked) como los que entraron por otro canal
+   *  (outcome=booked_other). Una meeting pasada NO popula este campo. */
+  upcoming_meeting?: {
+    start_time: string;
+    title: string | null;
+    outcome_type: "booked" | "booked_other";
+  } | null;
 };
 
 const TABLE = "cl001_p007_turn1_pipeline";
@@ -219,6 +229,68 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
         c.lead_outcome = leadOutcomes.get(c.lead_email) ?? null;
       }
     }
+
+    // Enriquecimiento #2: meeting PRÓXIMA (start_time > now) por lead.
+    // Indica que el lead ya tiene reunión pendiente (cualquier fuente) y el
+    // SDR no debería responder. Una reunión pasada NO entra aquí porque el
+    // lead vuelve a ser contactable si la cita ya quedó atrás.
+    const upcomingByEmail = new Map<
+      string,
+      { start_time: string; title: string | null; outcome_type: "booked" | "booked_other" }
+    >();
+    if (emails.length > 0) {
+      const nowIso = new Date().toISOString();
+      const chunks2: string[][] = [];
+      for (let i = 0; i < emails.length; i += 80) chunks2.push(emails.slice(i, i + 80));
+      for (const chunk of chunks2) {
+        const idsList = chunk.map((e) => `"${e}"`).join(",");
+        const opParams = new URLSearchParams({
+          select:
+            "outcome,meeting_start_time,details,cl001_p007_turn1_pipeline!inner(lead_email)",
+          outcome: "in.(booked,booked_other)",
+          meeting_start_time: `gt.${nowIso}`,
+          order: "meeting_start_time.asc",
+          limit: "1000",
+        });
+        opParams.append("cl001_p007_turn1_pipeline.lead_email", `in.(${idsList})`);
+        try {
+          type Row = {
+            outcome: "booked" | "booked_other";
+            meeting_start_time: string | null;
+            details: Record<string, unknown> | null;
+            cl001_p007_turn1_pipeline: { lead_email: string } | null;
+          };
+          const rows = ((await pgrest(
+            `${OUTCOMES_TABLE_FOR_TRIAGE}?${opParams.toString()}`,
+            { method: "GET" }
+          )) ?? []) as Row[];
+          // Las filas vienen ordenadas asc por meeting_start_time, así que la
+          // primera que veamos por lead = la próxima en el calendario.
+          for (const r of rows) {
+            const em = r.cl001_p007_turn1_pipeline?.lead_email;
+            if (!em || !r.meeting_start_time) continue;
+            if (upcomingByEmail.has(em)) continue;
+            const title =
+              r.details && typeof r.details["meeting_title"] === "string"
+                ? (r.details["meeting_title"] as string)
+                : null;
+            upcomingByEmail.set(em, {
+              start_time: r.meeting_start_time,
+              title,
+              outcome_type: r.outcome,
+            });
+          }
+        } catch (e) {
+          console.error("triage upcoming_meeting enrichment failed:", e);
+        }
+      }
+    }
+    for (const c of data) {
+      if (c.lead_email && upcomingByEmail.has(c.lead_email)) {
+        c.upcoming_meeting = upcomingByEmail.get(c.lead_email) ?? null;
+      }
+    }
+
     return { cases: data };
   }
 );
