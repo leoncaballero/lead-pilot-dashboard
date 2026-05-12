@@ -61,9 +61,14 @@ export type PromptVersion = {
   max_tokens: number | null;
   is_active: boolean;
   /** Si true, este prompt puede activar el auto-send sin revisión humana
-   *  cuando el validator devuelve score >= 95 y no errores críticos.
-   *  Por defecto false — el SDR revisa todo. */
+   *  cuando el validator devuelve score >= auto_send_min_score y no errores
+   *  críticos. Por defecto false — el SDR revisa todo. */
   auto_send_enabled: boolean;
+  /** Threshold de score del validator para auto-enviar (0-100).
+   *  Solo aplica cuando auto_send_enabled=true. Permite liberar progresivamente
+   *  bajando el umbral desde la UI sin tocar n8n: empezamos en 98 (muy estricto)
+   *  y vamos bajando conforme ganamos confianza. Default 95. */
+  auto_send_min_score: number;
   /** Peso de tráfico (0-100) cuando hay varias versiones activas del mismo combo.
    *  Routing en n8n hace weighted random según este valor.
    *  Default 100 = "toma todo el tráfico" si no hay competencia. */
@@ -151,6 +156,7 @@ export const createPromptVersion = createServerFn({ method: "POST" })
       notes?: string;
       setActive: boolean;
       auto_send_enabled?: boolean;
+      auto_send_min_score?: number;
       traffic_weight?: number;
       /** Modo A/B: si true, NO desactiva versiones hermanas al activar esta.
        *  Para iniciar un A/B sin matar la versión activa actual. */
@@ -217,6 +223,9 @@ export const createPromptVersion = createServerFn({ method: "POST" })
           max_tokens: data.max_tokens ?? fallbackTemplate?.max_tokens ?? 2048,
           is_active: data.setActive,
           auto_send_enabled: data.auto_send_enabled ?? false,
+          auto_send_min_score: typeof data.auto_send_min_score === "number"
+            ? Math.max(0, Math.min(100, Math.round(data.auto_send_min_score)))
+            : 95,
           traffic_weight: trafficWeight,
           description: data.description ?? null,
           notes: data.notes ?? null,
@@ -295,15 +304,34 @@ export const activatePromptVersion = createServerFn({ method: "POST" })
   });
 
 /**
- * Toggle auto_send_enabled de una versión. Útil para kill-switch rápido.
+ * Toggle auto_send_enabled de una versión (kill-switch) y opcionalmente ajusta
+ * auto_send_min_score en la misma llamada. El min_score controla el threshold
+ * de validator-score para que esta versión pueda auto-enviar: bajar el número
+ * = liberar más volumen al auto-send. Pasar null = mantener el actual.
  */
 export const setPromptAutoSend = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string; auto_send_enabled: boolean }) => data)
+  .inputValidator(
+    (data: {
+      id: string;
+      auto_send_enabled: boolean;
+      auto_send_min_score?: number | null;
+    }) => data
+  )
   .handler(async ({ data }) => {
+    const patch: Record<string, unknown> = {
+      auto_send_enabled: data.auto_send_enabled,
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof data.auto_send_min_score === "number") {
+      patch.auto_send_min_score = Math.max(
+        0,
+        Math.min(100, Math.round(data.auto_send_min_score))
+      );
+    }
     await pgrest(`${TABLE}?id=eq.${encodeURIComponent(data.id)}`, {
       method: "PATCH",
       prefer: "return=minimal",
-      body: JSON.stringify({ auto_send_enabled: data.auto_send_enabled, updated_at: new Date().toISOString() }),
+      body: JSON.stringify(patch),
     });
     return { ok: true };
   });
