@@ -35,6 +35,7 @@ import {
   getTriageCases,
   regenerateCase,
   rejectCase,
+  setHasKnownStore,
   undoSdrAction,
   type CanaryMetrics,
   type ClassificationOutput,
@@ -472,7 +473,9 @@ function TriagePage() {
   const undoFn = useServerFn(undoSdrAction);
   const editFn = useServerFn(editCase);
   const regenFn = useServerFn(regenerateCase);
+  const setStoreFn = useServerFn(setHasKnownStore);
   const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [settingStore, setSettingStore] = useState<string | null>(null);
 
   async function handleRegenerate(caseId: string) {
     setRegenerating(caseId);
@@ -487,6 +490,32 @@ function TriagePage() {
       alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setRegenerating(null);
+    }
+  }
+
+  async function handleSetStore(
+    caseId: string,
+    value: boolean | null,
+    regenerateAfter: boolean
+  ) {
+    setSettingStore(caseId);
+    try {
+      const res = await setStoreFn({ data: { id: caseId, has_known_store: value } });
+      if (!res.ok) {
+        alert(`Cambiar tienda falló: ${res.error ?? "error desconocido"}`);
+        return;
+      }
+      if (regenerateAfter) {
+        const r = await regenFn({ data: { id: caseId } });
+        if (!r.ok) {
+          alert(`Tienda cambiada, pero regenerar falló: ${r.error}`);
+        }
+      }
+      await router.invalidate();
+    } catch (e) {
+      alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSettingStore(null);
     }
   }
 
@@ -904,6 +933,10 @@ function TriagePage() {
                   total={cases.length}
                   onRegenerate={() => handleRegenerate(selected.id)}
                   regenerating={regenerating === selected.id}
+                  onSetStore={(value, regenerateAfter) =>
+                    handleSetStore(selected.id, value, regenerateAfter)
+                  }
+                  settingStore={settingStore === selected.id}
                 />
               </div>
               <ActionsFooter
@@ -1893,6 +1926,69 @@ function FilterChipRow({
   );
 }
 
+// ---------- store classifier control ----------
+
+function StoreClassifierControl({
+  current,
+  busy,
+  onChange,
+}: {
+  current: boolean | null;
+  busy: boolean;
+  onChange: (value: boolean | null) => void;
+}) {
+  const options: Array<{
+    value: boolean | null;
+    label: string;
+    hint: string;
+  }> = [
+    { value: true, label: "🛒 Tiene tienda", hint: "Lead con tienda online → enrutar al prompt has_store (catch-all si no existe específico)" },
+    { value: false, label: "🚫 Sin tienda", hint: "Lead sin tienda online → enrutar al prompt no_store (donde está el auto-send progresivo)" },
+    { value: null, label: "❓ Sin clasificar", hint: "Sin certeza → catch-all (subgroup=null), revisión humana" },
+  ];
+  return (
+    <div className="rounded-md border bg-card/60 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase text-muted-foreground">
+          Clasificación tienda (manual)
+        </h3>
+        {busy && (
+          <span className="text-[11px] text-muted-foreground italic">
+            Actualizando…
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Cambiar aquí <strong>regenera el Turn 1</strong> con el prompt apropiado
+        al subgroup elegido. Útil si el detector automático se equivocó.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const active = current === opt.value;
+          return (
+            <button
+              key={String(opt.value)}
+              type="button"
+              disabled={busy || active}
+              onClick={() => onChange(opt.value)}
+              title={opt.hint}
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11px] transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground border-primary cursor-default"
+                  : "bg-background hover:bg-accent text-foreground",
+                busy && !active && "opacity-60 cursor-wait"
+              )}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---------- detail ----------
 
 function CaseDetail({
@@ -1901,12 +1997,16 @@ function CaseDetail({
   total,
   onRegenerate,
   regenerating,
+  onSetStore,
+  settingStore,
 }: {
   case: TriageCase;
   index: number;
   total: number;
   onRegenerate: () => void;
   regenerating: boolean;
+  onSetStore: (value: boolean | null, regenerateAfter: boolean) => void;
+  settingStore: boolean;
 }) {
   const min = minutesSince(c.reply_timestamp);
   const cls = c.classification_output ?? {};
@@ -2023,6 +2123,14 @@ function CaseDetail({
         <div className="min-h-0 overflow-y-auto p-5 space-y-5">
           {/* Contexto HubSpot del lead — ayuda a juzgar si avanzar y cómo */}
           <HubSpotLeadContextCard hubspotContactId={c.hubspot_contact_id ?? null} />
+
+          {/* Clasificación manual de tienda + regenerar — útil cuando el detector
+              automático se equivocó (ej. dominio comercial que no matcheó la regex). */}
+          <StoreClassifierControl
+            current={c.has_known_store ?? null}
+            busy={settingStore || regenerating}
+            onChange={(value) => onSetStore(value, true)}
+          />
 
           {/* Turn 1: lo más importante, primero, en font sans para lectura natural */}
           <div>
