@@ -1535,10 +1535,39 @@ export type AutoSendVersionConfig = {
   auto_send_min_score: number;
   candidates_today: number;
 };
+export type ScoreBucket = {
+  label: string;
+  min: number;
+  max: number;
+  total: number;
+  without_critical_errors: number;
+};
+export type ThresholdScenario = {
+  threshold: number;
+  n_candidates: number;
+};
+export type HumanReviewByScore = {
+  label: string;
+  min: number;
+  max: number;
+  approved_as_is: number;
+  edited_and_sent: number;
+  rejected: number;
+  edit_rate: number;
+};
+export type TopCriticalError = {
+  error_text: string;
+  count: number;
+};
 export type AutoSendMonitorResult = {
   total_pending: number;
   candidates: AutoSendCandidate[];
   generator_versions: AutoSendVersionConfig[];
+  score_distribution: ScoreBucket[];
+  threshold_scenarios: ThresholdScenario[];
+  human_review_by_score: HumanReviewByScore[];
+  top_critical_errors: TopCriticalError[];
+  reviewed_total_14d: number;
 };
 
 export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
@@ -1646,10 +1675,133 @@ export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
       candidates_today: todayCounter.get(v.id) ?? 0,
     }));
 
+    // 5. Distribución de scores sobre TODAS las rows con score (pending + sent
+    //    + auto_rejected) de los últimos 7d. Permite ver el histograma real
+    //    y simular "qué pasaría si threshold = X".
+    const since14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const distParams = new URLSearchParams({
+      select: "score,validation_output",
+      order: "created_at.desc",
+      limit: "1000",
+    });
+    distParams.append("created_at", `gte.${since14d}`);
+    distParams.append("score", "not.is.null");
+    type DRow = {
+      score: number | null;
+      validation_output: { errores_criticos?: string[] } | null;
+    };
+    const distRows = ((await pgrest(`${PIPELINE_TABLE}?${distParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as DRow[];
+
+    const BUCKETS: Array<{ label: string; min: number; max: number }> = [
+      { label: "<70", min: 0, max: 70 },
+      { label: "70-80", min: 70, max: 80 },
+      { label: "80-85", min: 80, max: 85 },
+      { label: "85-90", min: 85, max: 90 },
+      { label: "90-92", min: 90, max: 92 },
+      { label: "92-95", min: 92, max: 95 },
+      { label: "95-97", min: 95, max: 97 },
+      { label: "97-100", min: 97, max: 101 },
+    ];
+    const score_distribution: ScoreBucket[] = BUCKETS.map((b) => {
+      const inBucket = distRows.filter(
+        (r) => (r.score ?? 0) >= b.min && (r.score ?? 0) < b.max
+      );
+      const without = inBucket.filter(
+        (r) =>
+          !Array.isArray(r.validation_output?.errores_criticos) ||
+          r.validation_output!.errores_criticos!.length === 0
+      );
+      return { ...b, total: inBucket.length, without_critical_errors: without.length };
+    });
+
+    // 6. Threshold scenarios: para distintos thresholds, cuántas rows pasarían
+    //    (score >= threshold AND errores_criticos = []).
+    const SCENARIOS = [85, 88, 90, 92, 95, 97, 98];
+    const threshold_scenarios: ThresholdScenario[] = SCENARIOS.map((t) => {
+      const n = distRows.filter((r) => {
+        const s = r.score ?? 0;
+        const err = Array.isArray(r.validation_output?.errores_criticos)
+          ? r.validation_output!.errores_criticos!
+          : [];
+        return s >= t && err.length === 0;
+      }).length;
+      return { threshold: t, n_candidates: n };
+    });
+
+    // 7. Top errores críticos en últimos 14d (todos los rows, no solo pending).
+    //    Agrupados por texto literal del error, top 8.
+    const errParams = new URLSearchParams({
+      select: "validation_output",
+      order: "created_at.desc",
+      limit: "1000",
+    });
+    errParams.append("created_at", `gte.${since14d}`);
+    type ERow = { validation_output: { errores_criticos?: string[] } | null };
+    const errRows = ((await pgrest(`${PIPELINE_TABLE}?${errParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as ERow[];
+    const errorCounts = new Map<string, number>();
+    for (const r of errRows) {
+      const errs = Array.isArray(r.validation_output?.errores_criticos)
+        ? r.validation_output!.errores_criticos!
+        : [];
+      for (const e of errs) {
+        if (typeof e !== "string" || !e.trim()) continue;
+        // Normalización ligera: bajar mayúsculas y trim para deduplicar mejor.
+        const key = e.trim();
+        errorCounts.set(key, (errorCounts.get(key) ?? 0) + 1);
+      }
+    }
+    const top_critical_errors: TopCriticalError[] = Array.from(errorCounts.entries())
+      .map(([error_text, count]) => ({ error_text, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    // 8. Calidad real con humano: rows ya revisados (sdr_action no null) en 14d,
+    //    agrupados por bucket de score. Métrica clave: edit_rate = editados /
+    //    (editados + aprobados_directos). Si edit_rate < 20% en un bucket
+    //    significa que ese threshold es seguro para auto-send.
+    const hrParams = new URLSearchParams({
+      select: "score,sdr_action",
+      order: "created_at.desc",
+      limit: "2000",
+    });
+    hrParams.append("created_at", `gte.${since14d}`);
+    hrParams.append("sdr_action", "not.is.null");
+    type HRow = { score: number | null; sdr_action: string | null };
+    const hrRows = ((await pgrest(`${PIPELINE_TABLE}?${hrParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as HRow[];
+
+    const HR_BUCKETS: Array<{ label: string; min: number; max: number }> = [
+      { label: "<85", min: 0, max: 85 },
+      { label: "85-90", min: 85, max: 90 },
+      { label: "90-95", min: 90, max: 95 },
+      { label: "95+", min: 95, max: 101 },
+    ];
+    const human_review_by_score: HumanReviewByScore[] = HR_BUCKETS.map((b) => {
+      const inBucket = hrRows.filter(
+        (r) => (r.score ?? 0) >= b.min && (r.score ?? 0) < b.max
+      );
+      const approved_as_is = inBucket.filter((r) => r.sdr_action === "approved_as_is").length;
+      const edited_and_sent = inBucket.filter((r) => r.sdr_action === "edited_and_sent").length;
+      const rejected = inBucket.filter((r) => r.sdr_action === "rejected").length;
+      const sent = approved_as_is + edited_and_sent;
+      const edit_rate = sent > 0 ? edited_and_sent / sent : 0;
+      return { ...b, approved_as_is, edited_and_sent, rejected, edit_rate };
+    });
+
     return {
       total_pending: rows.length,
       candidates,
       generator_versions,
+      score_distribution,
+      threshold_scenarios,
+      human_review_by_score,
+      top_critical_errors,
+      reviewed_total_14d: hrRows.length,
     };
   }
 );

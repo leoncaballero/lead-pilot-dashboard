@@ -8,6 +8,10 @@ import {
   getAutoSendMonitor,
   type AutoSendCandidate,
   type AutoSendVersionConfig,
+  type ScoreBucket,
+  type ThresholdScenario,
+  type HumanReviewByScore,
+  type TopCriticalError,
 } from "@/api/prompts.functions";
 
 export const Route = createFileRoute("/_authenticated/auto-send-monitor")({
@@ -42,7 +46,16 @@ function Pending() {
 
 function Page() {
   const data = Route.useLoaderData();
-  const { candidates, generator_versions, total_pending } = data;
+  const {
+    candidates,
+    generator_versions,
+    total_pending,
+    score_distribution,
+    threshold_scenarios,
+    human_review_by_score,
+    top_critical_errors,
+    reviewed_total_14d,
+  } = data;
 
   // Agrupar candidatos por versión del generator
   const groupedByVersion = useMemo(() => {
@@ -103,6 +116,18 @@ function Page() {
           ))}
         </div>
       </section>
+
+      {/* ⚖️ Calibración del threshold — la métrica que decide cuándo activar */}
+      <HumanReviewSection rows={human_review_by_score} total={reviewed_total_14d} />
+
+      {/* 📊 Histograma de scores + tabla what-if de thresholds */}
+      <CalibrationSection
+        buckets={score_distribution}
+        scenarios={threshold_scenarios}
+      />
+
+      {/* 🔴 Top errores críticos del validator */}
+      <TopErrorsSection errors={top_critical_errors} />
 
       {/* Candidatos agrupados por versión */}
       <section className="space-y-3">
@@ -258,6 +283,234 @@ function CandidateRow({ c }: { c: AutoSendCandidate }) {
         </Link>
       </div>
     </div>
+  );
+}
+
+// ---------- 1. Human review (la métrica que decide cuándo activar auto-send) ----------
+
+function HumanReviewSection({
+  rows,
+  total,
+}: {
+  rows: HumanReviewByScore[];
+  total: number;
+}) {
+  // Bucket que matchea el threshold actual del primer generator (95+) para destacar
+  const headlineBucket = rows.find((r) => r.label === "95+");
+  const headlineEditRate = headlineBucket
+    ? (headlineBucket.edit_rate * 100).toFixed(0)
+    : "—";
+  const headlineN =
+    headlineBucket
+      ? headlineBucket.approved_as_is + headlineBucket.edited_and_sent
+      : 0;
+  const tone =
+    !headlineBucket || headlineN === 0
+      ? "muted"
+      : headlineBucket.edit_rate < 0.2
+      ? "emerald"
+      : headlineBucket.edit_rate < 0.4
+      ? "amber"
+      : "red";
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        ⚖️ Calidad real con humano · score ≥95 · {total} revisados en 14d
+      </h2>
+      <div className="rounded-lg border bg-card p-3 space-y-3">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <div className="text-[11px] text-muted-foreground">
+            Edit-rate score 95+ (% que el SDR edita antes de aprobar):
+          </div>
+          <div
+            className={cn(
+              "text-3xl font-semibold tabular-nums",
+              tone === "emerald" && "text-emerald-700 dark:text-emerald-300",
+              tone === "amber" && "text-amber-700 dark:text-amber-300",
+              tone === "red" && "text-red-700 dark:text-red-300"
+            )}
+          >
+            {headlineEditRate}%
+          </div>
+          <div className="text-[11px] text-muted-foreground italic">
+            n={headlineN}
+          </div>
+        </div>
+        <div className="text-[11px] text-muted-foreground italic">
+          Regla: si edit-rate del bucket {">= "}40% → el threshold actual NO está
+          listo para auto-send. Si {"<"}20% → seguro de activar. Entre 20-40% →
+          puedes activar con cap diario bajo y vigilar.
+        </div>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="py-1 font-medium">Score</th>
+              <th className="py-1 font-medium text-right">Aprobado tal cual</th>
+              <th className="py-1 font-medium text-right">Editado antes</th>
+              <th className="py-1 font-medium text-right">Rechazado</th>
+              <th className="py-1 font-medium text-right">Edit-rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const ratePct = (r.edit_rate * 100).toFixed(0);
+              const rateColor =
+                r.edit_rate < 0.2
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : r.edit_rate < 0.4
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-red-600 dark:text-red-400";
+              const sent = r.approved_as_is + r.edited_and_sent;
+              return (
+                <tr key={r.label} className="border-b last:border-0">
+                  <td className="py-1 font-mono">{r.label}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {r.approved_as_is}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">
+                    {r.edited_and_sent}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">{r.rejected}</td>
+                  <td
+                    className={cn(
+                      "py-1 text-right tabular-nums font-semibold",
+                      sent > 0 ? rateColor : "text-muted-foreground"
+                    )}
+                  >
+                    {sent > 0 ? `${ratePct}%` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ---------- 2. Calibración: histograma + scenarios "what-if" ----------
+
+function CalibrationSection({
+  buckets,
+  scenarios,
+}: {
+  buckets: ScoreBucket[];
+  scenarios: ThresholdScenario[];
+}) {
+  const maxBucket = Math.max(...buckets.map((b) => b.total), 1);
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        📊 Calibración del threshold (14d)
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Histograma */}
+        <div className="rounded-lg border bg-card p-3 space-y-2">
+          <div className="text-[11px] text-muted-foreground">
+            Distribución de scores. Barra clara = total. Barra oscura = sin
+            errores críticos (auto-sendable si threshold lo permite).
+          </div>
+          <div className="space-y-1">
+            {buckets.map((b) => {
+              const totalPct = (b.total / maxBucket) * 100;
+              const cleanPct = (b.without_critical_errors / maxBucket) * 100;
+              return (
+                <div key={b.label} className="flex items-center gap-2 text-[11px]">
+                  <div className="w-12 font-mono tabular-nums text-muted-foreground">
+                    {b.label}
+                  </div>
+                  <div className="flex-1 h-5 bg-muted/40 rounded relative overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-slate-300 dark:bg-slate-700"
+                      style={{ width: `${totalPct}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 left-0 bg-emerald-500/70"
+                      style={{ width: `${cleanPct}%` }}
+                    />
+                  </div>
+                  <div className="w-20 text-right tabular-nums text-muted-foreground">
+                    {b.without_critical_errors}/{b.total}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* What-if scenarios */}
+        <div className="rounded-lg border bg-card p-3 space-y-2">
+          <div className="text-[11px] text-muted-foreground">
+            Si bajaras/subieras el threshold, cuántos casos cumplirían criterios
+            (score ≥ threshold AND sin errores críticos) en los últimos 14d.
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="py-1 font-medium">Threshold</th>
+                <th className="py-1 font-medium text-right">Candidatos 14d</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scenarios.map((s) => (
+                <tr key={s.threshold} className="border-b last:border-0">
+                  <td className="py-1 font-mono">≥{s.threshold}</td>
+                  <td className="py-1 text-right tabular-nums">{s.n_candidates}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="text-[10px] text-muted-foreground italic">
+            Cruza esto con la tabla de edit-rate arriba: el threshold ideal es
+            el más bajo donde edit-rate {"<"} 20%.
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- 3. Top errores críticos ----------
+
+function TopErrorsSection({ errors }: { errors: TopCriticalError[] }) {
+  if (errors.length === 0) return null;
+  const max = Math.max(...errors.map((e) => e.count), 1);
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        🔴 Errores críticos más comunes (14d)
+      </h2>
+      <div className="rounded-lg border bg-card p-3 space-y-2">
+        <div className="text-[11px] text-muted-foreground">
+          Los errores que más bajan score y bloquean candidatos. Arreglar el
+          prompt para eliminar estos = más volumen pasaría el filtro de auto-send.
+        </div>
+        <div className="space-y-1.5">
+          {errors.map((e, i) => {
+            const pct = (e.count / max) * 100;
+            return (
+              <div key={i} className="space-y-0.5">
+                <div className="flex items-baseline gap-2 text-[11px]">
+                  <span className="font-mono tabular-nums w-8 text-right text-muted-foreground">
+                    {e.count}×
+                  </span>
+                  <span className="flex-1 truncate" title={e.error_text}>
+                    {e.error_text}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-muted/40 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-red-500/60"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }
 
