@@ -561,3 +561,143 @@ function parseJsonish(text: string): Record<string, unknown> | null {
   }
   return null;
 }
+
+/**
+ * Canary metrics para un subgrupo (típicamente MEGA + no_store).
+ * Devuelve los KPIs necesarios para saber si está listo para activar auto-send:
+ * - approval-no-edit rate
+ * - score≥95 hit rate
+ * - aprobaciones consecutivas (proxy de estabilidad)
+ *
+ * Subgroup encoding:
+ *   no_store: has_known_store === false
+ *   has_store: has_known_store === true
+ *   default: has_known_store IS NULL (todos sin clasificar todavía)
+ */
+export type CanaryMetrics = {
+  segmento: string;
+  subgroup: "no_store" | "has_store" | "default" | "all";
+  pending_count: number;
+  processed_count: number;
+  approved_no_edit_count: number;
+  edited_count: number;
+  rejected_count: number;
+  deep_review_count: number;
+  score_ge_95_count: number;
+  approval_rate: number;
+  score_ge_95_rate: number;
+  consecutive_approved_no_edit: number;
+  ready_to_flip: boolean;
+  ready_reason: string;
+};
+
+export const getCanaryMetrics = createServerFn({ method: "GET" })
+  .inputValidator(
+    (data: {
+      segmento: string;
+      subgroup: "no_store" | "has_store" | "default" | "all";
+      limit?: number;
+    }) => data
+  )
+  .handler(async ({ data }): Promise<CanaryMetrics> => {
+    const limit = data.limit ?? 50;
+
+    // 1. Count pending
+    const pendingParams = new URLSearchParams({
+      segmento: `eq.${data.segmento}`,
+      status: "eq.pending_review",
+      select: "id",
+    });
+    if (data.subgroup === "no_store") pendingParams.append("has_known_store", "is.false");
+    else if (data.subgroup === "has_store") pendingParams.append("has_known_store", "is.true");
+    else if (data.subgroup === "default") pendingParams.append("has_known_store", "is.null");
+    const pendingRows = ((await pgrest(
+      `${TABLE}?${pendingParams.toString()}`,
+      { method: "GET" }
+    )) ?? []) as Array<{ id: string }>;
+    const pending_count = pendingRows.length;
+
+    // 2. Last N processed (sdr_action not null)
+    const processedParams = new URLSearchParams({
+      segmento: `eq.${data.segmento}`,
+      sdr_action: "not.is.null",
+      select: "id,sdr_action,score,errores_criticos,sdr_action_timestamp",
+      order: "sdr_action_timestamp.desc.nullslast",
+      limit: String(limit),
+    });
+    if (data.subgroup === "no_store") processedParams.append("has_known_store", "is.false");
+    else if (data.subgroup === "has_store") processedParams.append("has_known_store", "is.true");
+    else if (data.subgroup === "default") processedParams.append("has_known_store", "is.null");
+    type Row = {
+      id: string;
+      sdr_action: string | null;
+      score: number | null;
+      errores_criticos: string[] | null;
+    };
+    const processed = ((await pgrest(
+      `${TABLE}?${processedParams.toString()}`,
+      { method: "GET" }
+    )) ?? []) as Row[];
+
+    const processed_count = processed.length;
+    let approved_no_edit_count = 0;
+    let edited_count = 0;
+    let rejected_count = 0;
+    let deep_review_count = 0;
+    let score_ge_95_count = 0;
+
+    for (const r of processed) {
+      if (r.sdr_action === "approved_as_is") approved_no_edit_count++;
+      else if (r.sdr_action === "edited_and_sent") edited_count++;
+      else if (r.sdr_action === "rejected") rejected_count++;
+      else if (r.sdr_action === "sent_to_deep_review") deep_review_count++;
+      if (typeof r.score === "number" && r.score >= 95) score_ge_95_count++;
+    }
+
+    // Consecutive approved-no-edit desde el más reciente hacia atrás
+    let consecutive = 0;
+    for (const r of processed) {
+      if (r.sdr_action === "approved_as_is" && (r.errores_criticos?.length ?? 0) === 0) consecutive++;
+      else break;
+    }
+
+    const approval_rate = processed_count > 0 ? approved_no_edit_count / processed_count : 0;
+    const score_ge_95_rate = processed_count > 0 ? score_ge_95_count / processed_count : 0;
+
+    // Criterios:
+    // - approved_no_edit_count >= 20 absoluto
+    // - approval_rate >= 0.8
+    // - score_ge_95_rate >= 0.9
+    // - consecutive >= 8 (estabilidad reciente)
+    let ready_to_flip = false;
+    let ready_reason = "";
+    if (approved_no_edit_count < 20) {
+      ready_reason = `Faltan ${20 - approved_no_edit_count} aprobaciones-sin-editar para llegar al mínimo de 20`;
+    } else if (approval_rate < 0.8) {
+      ready_reason = `Approval rate ${(approval_rate * 100).toFixed(0)}% < 80% mínimo`;
+    } else if (score_ge_95_rate < 0.9) {
+      ready_reason = `Score≥95 rate ${(score_ge_95_rate * 100).toFixed(0)}% < 90% mínimo`;
+    } else if (consecutive < 8) {
+      ready_reason = `Solo ${consecutive} aprobaciones consecutivas (mínimo 8)`;
+    } else {
+      ready_to_flip = true;
+      ready_reason = "Todos los criterios cumplidos — listo para activar auto-send";
+    }
+
+    return {
+      segmento: data.segmento,
+      subgroup: data.subgroup,
+      pending_count,
+      processed_count,
+      approved_no_edit_count,
+      edited_count,
+      rejected_count,
+      deep_review_count,
+      score_ge_95_count,
+      approval_rate,
+      score_ge_95_rate,
+      consecutive_approved_no_edit: consecutive,
+      ready_to_flip,
+      ready_reason,
+    };
+  });
