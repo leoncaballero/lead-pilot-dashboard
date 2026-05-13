@@ -314,6 +314,194 @@ export const getTriageCases = createServerFn({ method: "GET" }).handler(
 
 const OUTCOMES_TABLE_FOR_TRIAGE = "cl001_p007_outcomes";
 
+// ============================================================================
+// Lead Timeline — cronología completa de un lead end-to-end
+// Útil para diagnosticar "no llegó a triage" sin tener que correr 5 queries.
+// ============================================================================
+
+export type LeadTimelineRow = {
+  pipeline_id: string;
+  turn_number: number | null;
+  turn_type: string | null;
+  segmento: string | null;
+  has_known_store: boolean | null;
+  status: string | null;
+  score: number | null;
+  sdr_action: string | null;
+  campaign_id: string | null;
+  created_at: string | null;
+  sent_at: string | null;
+  reply_timestamp: string | null;
+  reply_original: string | null;
+  turn_1_generated: string | null;
+  turn_1_final: string | null;
+  patron: string | null;
+  validation_output: Record<string, unknown> | null;
+  classification_output: Record<string, unknown> | null;
+  setter_name: string | null;
+  smartlead_thread_id: string | null;
+  edit_reasons: string[];
+  events: Array<{
+    event_type: string;
+    created_at: string;
+    payload: Record<string, unknown> | null;
+  }>;
+  outcomes: Array<{
+    outcome: string;
+    outcome_source: string | null;
+    occurred_at: string;
+    meeting_start_time: string | null;
+    details: Record<string, unknown> | null;
+  }>;
+};
+
+export type LeadTimeline = {
+  lead_email: string;
+  hubspot_contact_id: string | null;
+  lead_name: string | null;
+  rows: LeadTimelineRow[];
+  found: boolean;
+};
+
+export const getLeadTimeline = createServerFn({ method: "GET" })
+  .inputValidator((data: { email: string }) => data)
+  .handler(async ({ data }): Promise<LeadTimeline> => {
+    const email = data.email.trim().toLowerCase();
+
+    // 1. Todos los pipeline rows de este lead (orden cronológico ASC para timeline)
+    const pParams = new URLSearchParams({
+      lead_email: `eq.${email}`,
+      select: "*",
+      order: "created_at.asc.nullsfirst",
+    });
+    const rows = ((await pgrest(`${TABLE}?${pParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as Array<Record<string, unknown>>;
+
+    if (rows.length === 0) {
+      return { lead_email: email, hubspot_contact_id: null, lead_name: null, rows: [], found: false };
+    }
+
+    const pipelineIds = rows.map((r) => r.id as string);
+    const inList = pipelineIds.map((id) => `"${id}"`).join(",");
+
+    // 2. Activity events para todos los pipeline_ids
+    const evParams = new URLSearchParams({
+      pipeline_id: `in.(${inList})`,
+      select: "pipeline_id,event_type,created_at,payload",
+      order: "created_at.asc",
+      limit: "500",
+    });
+    const events = ((await pgrest(`${ACTIVITY_TABLE}?${evParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as Array<{
+      pipeline_id: string;
+      event_type: string;
+      created_at: string;
+      payload: Record<string, unknown> | null;
+    }>;
+
+    // 3. Edit reasons
+    const erParams = new URLSearchParams({
+      pipeline_id: `in.(${inList})`,
+      select: "pipeline_id,reason,created_at",
+      order: "created_at.asc",
+      limit: "500",
+    });
+    const editReasons = ((await pgrest(`${EDIT_REASONS_TABLE}?${erParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as Array<{
+      pipeline_id: string;
+      reason: string;
+      created_at: string;
+    }>;
+
+    // 4. Outcomes
+    const oParams = new URLSearchParams({
+      pipeline_id: `in.(${inList})`,
+      select: "pipeline_id,outcome,outcome_source,occurred_at,meeting_start_time,details",
+      order: "occurred_at.asc",
+      limit: "500",
+    });
+    const outcomes = ((await pgrest(`${OUTCOMES_TABLE_FOR_TRIAGE}?${oParams.toString()}`, {
+      method: "GET",
+    })) ?? []) as Array<{
+      pipeline_id: string;
+      outcome: string;
+      outcome_source: string | null;
+      occurred_at: string;
+      meeting_start_time: string | null;
+      details: Record<string, unknown> | null;
+    }>;
+
+    // 5. Agrupar por pipeline_id
+    const eventsByRow = new Map<string, typeof events>();
+    for (const e of events) {
+      const arr = eventsByRow.get(e.pipeline_id) ?? [];
+      arr.push(e);
+      eventsByRow.set(e.pipeline_id, arr);
+    }
+    const reasonsByRow = new Map<string, string[]>();
+    for (const r of editReasons) {
+      const arr = reasonsByRow.get(r.pipeline_id) ?? [];
+      arr.push(r.reason);
+      reasonsByRow.set(r.pipeline_id, arr);
+    }
+    const outcomesByRow = new Map<string, typeof outcomes>();
+    for (const o of outcomes) {
+      const arr = outcomesByRow.get(o.pipeline_id) ?? [];
+      arr.push(o);
+      outcomesByRow.set(o.pipeline_id, arr);
+    }
+
+    const timelineRows: LeadTimelineRow[] = rows.map((r) => {
+      const id = r.id as string;
+      return {
+        pipeline_id: id,
+        turn_number: (r.turn_number as number | null) ?? null,
+        turn_type: (r.turn_type as string | null) ?? null,
+        segmento: (r.segmento as string | null) ?? null,
+        has_known_store: (r.has_known_store as boolean | null) ?? null,
+        status: (r.status as string | null) ?? null,
+        score: (r.score as number | null) ?? null,
+        sdr_action: (r.sdr_action as string | null) ?? null,
+        campaign_id: (r.campaign_id as string | null) ?? null,
+        created_at: (r.created_at as string | null) ?? null,
+        sent_at: (r.sent_at as string | null) ?? null,
+        reply_timestamp: (r.reply_timestamp as string | null) ?? null,
+        reply_original: (r.reply_original as string | null) ?? null,
+        turn_1_generated: (r.turn_1_generated as string | null) ?? null,
+        turn_1_final: (r.turn_1_final as string | null) ?? null,
+        patron: (r.patron as string | null) ?? null,
+        validation_output: (r.validation_output as Record<string, unknown> | null) ?? null,
+        classification_output: (r.classification_output as Record<string, unknown> | null) ?? null,
+        setter_name: (r.setter_name as string | null) ?? null,
+        smartlead_thread_id: (r.smartlead_thread_id as string | null) ?? null,
+        edit_reasons: reasonsByRow.get(id) ?? [],
+        events: (eventsByRow.get(id) ?? []).map((e) => ({
+          event_type: e.event_type,
+          created_at: e.created_at,
+          payload: e.payload,
+        })),
+        outcomes: (outcomesByRow.get(id) ?? []).map((o) => ({
+          outcome: o.outcome,
+          outcome_source: o.outcome_source,
+          occurred_at: o.occurred_at,
+          meeting_start_time: o.meeting_start_time,
+          details: o.details,
+        })),
+      };
+    });
+
+    return {
+      lead_email: email,
+      hubspot_contact_id: (rows[0].hubspot_contact_id as string | null) ?? null,
+      lead_name: (rows[0].lead_name as string | null) ?? (rows[0].lead_resolved_name as string | null) ?? null,
+      rows: timelineRows,
+      found: true,
+    };
+  });
+
 export const getRealtimeConfig = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ url: string; anonKey: string } | null> => {
     const url = process.env.OUTBOUND_SUPABASE_URL;
