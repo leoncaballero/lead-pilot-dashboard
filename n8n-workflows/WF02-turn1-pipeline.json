@@ -1,0 +1,1952 @@
+{
+  "active": true,
+  "connections": {
+    "Clasificador MEGA": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Validar Clasificacion MEGA",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Code: Detect store signal": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load active strategy",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Code: Normalize context": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Code: Detect store signal",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Code: Prep HubSpot context": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Postgres: Get or create hs_thread_id",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Compute final status": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Create a row",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Should auto-send?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Dry run mode?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark dry_run only",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Smartlead reply-to-thread",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Ensure thread row": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "HubSpot: Create EMAIL",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Filter active campaign": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Prepare send ctx B",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Generador MEGA": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Validador MEGA",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Index prompts": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Switch",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Lead valido?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Generador MEGA",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Generador MEGA",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load active prompts": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Index prompts",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load active strategy": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load active prompts",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load row by id": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Resolve campaign_id",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Mark sent": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Postgres: Reload pipeline row",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Parse AI outputs": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Compute final status",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Pipeline start": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Search contacts",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Postgres: Get or create hs_thread_id": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Ensure thread row",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Postgres: Reload pipeline row": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Code: Prep HubSpot context",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Prepare send ctx A": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Dry run mode?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Prepare send ctx B": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Webhook Response",
+            "type": "main"
+          },
+          {
+            "index": 0,
+            "node": "Dry run mode?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Resolve campaign_id": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Filter active campaign",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Search contacts": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Smartlead: Lookup mailbox",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Should auto-send?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Prepare send ctx A",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
+    "Skip - build invalid payload": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Create a row",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Slack - Notificacion SDR": {
+      "main": [
+        []
+      ]
+    },
+    "Smartlead reply-to-thread": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark sent",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Mark error_send",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Smartlead: Get message history": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Code: Normalize context",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Smartlead: Lookup mailbox": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Smartlead: Get message history",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Clasificador MEGA",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Clasificador MEGA",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Clasificador MEGA",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Clasificador MEGA",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Trigger B - From Lovable": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load row by id",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Validador MEGA": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Parse AI outputs",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Validar Clasificacion MEGA": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Lead valido?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Pipeline start",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "Y0k0uh5KX2TvDzFf",
+  "name": "GTM - 001 - WF02 - Turn 1 Pipeline",
+  "nodes": [
+    {
+      "id": "038d68d7-b3fd-4377-adc9-37a0813829bd",
+      "name": "When Executed by Another Workflow",
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "position": [
+        -496,
+        -144
+      ],
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1
+    },
+    {
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "__HUBSPOT_APP_TOKEN_REDACTED__",
+          "name": "C.io Token HubSpot"
+        }
+      },
+      "id": "d3d9f855-3ea0-4568-afb1-cc5ba519c20a",
+      "name": "Search contacts",
+      "parameters": {
+        "additionalFields": {
+          "properties": [
+            "firstname",
+            "lastname",
+            "email",
+            "gtm__avatar_segment"
+          ]
+        },
+        "authentication": "appToken",
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "email|string",
+                    "value": "={{ $json.body.sl_lead_email }}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "operation": "search"
+      },
+      "position": [
+        -160,
+        -144
+      ],
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "6e1acad1-1e6b-41eb-9eb6-a18b610817e9",
+      "name": "Switch",
+      "parameters": {
+        "options": {},
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "15e30c15-db17-4dd4-905f-898ba336c59c",
+                    "leftValue": "={{ $json.properties.gtm__avatar_segment }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "MEGA"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "MEGA",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "11e48716-3fef-4bcc-9841-4e9b96a1007c",
+                    "leftValue": "={{ $json.properties.gtm__avatar_segment }}",
+                    "operator": {
+                      "name": "filter.operator.equals",
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "Genesis"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Genesis",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "a83eb115-2701-4a32-8872-016ca2e4d5d4",
+                    "leftValue": "={{ $json.properties.gtm__avatar_segment }}",
+                    "operator": {
+                      "name": "filter.operator.equals",
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "Prosperitas"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Prosperitas",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "b7f1f658-1767-475c-94bf-78bbba5b5542",
+                    "leftValue": "=",
+                    "operator": {
+                      "name": "filter.operator.equals",
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": ""
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              }
+            }
+          ]
+        }
+      },
+      "position": [
+        160,
+        -176
+      ],
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "anthropicApi": {
+          "id": "SWPkUHIHw8Glh73p",
+          "name": "Anthropic 2"
+        },
+        "httpHeaderAuth": {
+          "id": "fOldeSEqZOEjGUkE",
+          "name": "Trigger WebHook Zapier"
+        }
+      },
+      "id": "adb09916-f0f7-435c-ad2c-ed0b7b1f2793",
+      "maxTries": 3,
+      "name": "Clasificador MEGA",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Index prompts').first().json.classifier.model,\n  max_tokens: $('Index prompts').first().json.classifier.max_tokens,\n  ...($('Index prompts').first().json.classifier.model && $('Index prompts').first().json.classifier.model.indexOf(\"opus\") === -1 ? { temperature: $('Index prompts').first().json.classifier.temperature } : {}),\n  system: $('Index prompts').first().json.classifier.prompt_system,\n  messages: [{\n    role: \"user\",\n    content: $('When Executed by Another Workflow').item.json.body.reply_message.text\n  }]\n}) }}",
+        "method": "POST",
+        "nodeCredentialType": "anthropicApi",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "position": [
+        528,
+        -320
+      ],
+      "retryOnFail": true,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "1bec7c0b-ddd4-42e4-bae3-c8689f81fe6d",
+      "name": "Validar Clasificacion MEGA",
+      "parameters": {
+        "jsCode": "// Validar Clasificacion MEGA\n// Parsea el JSON de respuesta del Clasificador y verifica es_lead_valido\n\nconst item = $input.first();\nconst rawContent = item.json.content;\n\n// Extraer el texto de la respuesta de Anthropic\nlet responseText = '';\nif (Array.isArray(rawContent)) {\n    responseText = rawContent[0]?.text || '';\n} else if (typeof rawContent === 'string') {\n    responseText = rawContent;\n}\n\n// Intentar parsear JSON\nlet clasificacion = null;\nlet parseError = null;\n\ntry {\n    // Buscar JSON en la respuesta (puede venir con texto adicional)\n    const jsonMatch = responseText.match(/\\{[\\s\\S]*\\}/);\n    if (jsonMatch) {\n          clasificacion = JSON.parse(jsonMatch[0]);\n    } else {\n          throw new Error('No JSON encontrado en respuesta');\n    }\n} catch (e) {\n    parseError = e.message;\n}\n\n// Si hay error de parseo → marcar para Slack alert\nif (parseError || !clasificacion) {\n    return [{\n          json: {\n                  valido: false,\n                  razon_fallo: 'JSON malformado del Clasificador: ' + (parseError || 'sin datos'),\n                  clasificacion: null,\n                  _ruta: 'STOP_JSON_ERROR'\n          }\n    }];\n}\n\n// Si es_lead_valido === false → marcar para Slack alert\nif (clasificacion.es_lead_valido === false) {\n    return [{\n          json: {\n                  valido: false,\n                  razon_fallo: 'Lead no valido segun clasificador. Patron: ' + (clasificacion.patron || 'desconocido'),\n                  clasificacion: clasificacion,\n                  _ruta: 'STOP_LEAD_INVALIDO'\n          }\n    }];\n}\n\n// Todo OK → pasar clasificacion al siguiente nodo\nreturn [{\n    json: {\n          valido: true,\n          clasificacion: clasificacion,\n          _ruta: 'CONTINUAR'\n    }\n}];"
+      },
+      "position": [
+        752,
+        -320
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "anthropicApi": {
+          "id": "ES2QcyKjReuRCmDf",
+          "name": "Anthropic account"
+        }
+      },
+      "id": "ede9351d-081b-4807-ac0b-31c1dbd6cbc4",
+      "maxTries": 3,
+      "name": "Generador MEGA",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Index prompts').first().json.generator.model,\n  max_tokens: $('Index prompts').first().json.generator.max_tokens,\n  ...($('Index prompts').first().json.generator.model && $('Index prompts').first().json.generator.model.indexOf(\"opus\") === -1 ? { temperature: $('Index prompts').first().json.generator.temperature } : {}),\n  system: $('Index prompts').first().json.generator.prompt_system,\n  messages: [{\n    role: \"user\",\n    content: \"Datos del lead:\\n- nombre: \" + ($('Code: Normalize context').first().json.lead_resolved_name || '(sin nombre — saluda sin nombre, NUNCA uses Lead como placeholder)') + \"\\n- setter (la persona que firma este email): \" + ($('Code: Normalize context').first().json.setter_first_name || 'Laura') + \"\\n\\nHilo previo de la conversación:\\n\" + ($('Code: Normalize context').first().json.thread_summary || '(no disponible)') + \"\\n\\nOutput del clasificador:\\n\" + JSON.stringify($json.clasificacion)\n  }]\n}) }}",
+        "method": "POST",
+        "nodeCredentialType": "anthropicApi",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "position": [
+        1072,
+        -384
+      ],
+      "retryOnFail": true,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "waitBetweenTries": 3000
+    },
+    {
+      "credentials": {
+        "anthropicApi": {
+          "id": "ES2QcyKjReuRCmDf",
+          "name": "Anthropic account"
+        }
+      },
+      "id": "ea91b1ae-8437-42ee-9b85-062e75dbfbce",
+      "maxTries": 3,
+      "name": "Validador MEGA",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Index prompts').first().json.validator.model,\n  max_tokens: $('Index prompts').first().json.validator.max_tokens,\n  ...($('Index prompts').first().json.validator.model && $('Index prompts').first().json.validator.model.indexOf(\"opus\") === -1 ? { temperature: $('Index prompts').first().json.validator.temperature } : {}),\n  system: $('Index prompts').first().json.validator.prompt_system,\n  messages: [{\n    role: \"user\",\n    content: \"Datos del lead:\\n- nombre: \" + ($('When Executed by Another Workflow').item.json.body.lead_name || $('Search contacts').item.json.properties.firstname || 'Lead') + \"\\n- setter: \" + ($('Code: Normalize context').first().json.setter_first_name || $('When Executed by Another Workflow').item.json.body.setter_name || '(no identificado)') + \"\\n\\nOutput del clasificador:\\n\" + JSON.stringify($('Validar Clasificacion MEGA').item.json.clasificacion) + \"\\n\\nOutput del generador:\\n\" + $json.content[0].text\n  }]\n}) }}",
+        "method": "POST",
+        "nodeCredentialType": "anthropicApi",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "position": [
+        1200,
+        -320
+      ],
+      "retryOnFail": true,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "waitBetweenTries": 3000
+    },
+    {
+      "credentials": {
+        "slackApi": {
+          "id": "DD6bf2ZtzLXSifVo",
+          "name": "Bot Nexau"
+        }
+      },
+      "disabled": true,
+      "id": "d5feb417-15d6-4b71-8529-efed14afee59",
+      "name": "Slack - Notificacion SDR",
+      "parameters": {
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "otherOptions": {},
+        "select": "channel"
+      },
+      "position": [
+        1504,
+        -544
+      ],
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "webhookId": "54afb6b9-cfbb-4982-9e09-fb8e1715996c"
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "4e231a85-b52c-4e24-a400-a7e128990cc3",
+      "name": "Create a row",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "smartlead_lead_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}"
+            },
+            {
+              "fieldId": "smartlead_thread_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.stats_id || null }}"
+            },
+            {
+              "fieldId": "hubspot_contact_id",
+              "fieldValue": "={{ $('Search contacts').item.json.id }}"
+            },
+            {
+              "fieldId": "lead_name",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.lead_name || (($('Search contacts').item.json.properties.firstname || '') + ($('Search contacts').item.json.properties.lastname ? ' ' + $('Search contacts').item.json.properties.lastname : '')).trim() || 'Lead' }}"
+            },
+            {
+              "fieldId": "lead_email",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_lead_email }}"
+            },
+            {
+              "fieldId": "reply_original",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.reply_message.text }}"
+            },
+            {
+              "fieldId": "reply_timestamp",
+              "fieldValue": "={{ $now }}"
+            },
+            {
+              "fieldId": "segmento",
+              "fieldValue": "={{ $('Search contacts').item.json.properties.gtm__avatar_segment || 'MEGA' }}"
+            },
+            {
+              "fieldId": "classification_output",
+              "fieldValue": "={{ $json.classification }}"
+            },
+            {
+              "fieldId": "patron",
+              "fieldValue": "={{ $json.classification.patron }}"
+            },
+            {
+              "fieldId": "turn_1_generated",
+              "fieldValue": "={{ $json.generation.turn_1 }}"
+            },
+            {
+              "fieldId": "generation_metadata",
+              "fieldValue": "={{ $json.generation_metadata }}"
+            },
+            {
+              "fieldId": "validation_output",
+              "fieldValue": "={{ $json.validation }}"
+            },
+            {
+              "fieldId": "score",
+              "fieldValue": "={{ $json.validation.score }}"
+            },
+            {
+              "fieldId": "validado",
+              "fieldValue": "={{ $json.validation.validado }}"
+            },
+            {
+              "fieldId": "errores_criticos",
+              "fieldValue": "={{ $json.validation.errores_criticos }}"
+            },
+            {
+              "fieldId": "razones_fallo",
+              "fieldValue": "={{ $json.validation.razones_fallo }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.final_status }}"
+            },
+            {
+              "fieldId": "tokens_consumed",
+              "fieldValue": "={{ $json.tokens_total }}"
+            },
+            {
+              "fieldId": "models_used",
+              "fieldValue": "={{ $json.models }}"
+            },
+            {
+              "fieldId": "prompt_versions",
+              "fieldValue": "={{ ({classifier: 'v1.0', generator: 'v1.0', validator: 'v1.0'}) }}"
+            },
+            {
+              "fieldId": "pipeline_duration_seconds",
+              "fieldValue": "={{ Math.round(($now.toMillis() - $('Pipeline start').item.json.pipeline_start_ms) / 1000) }}"
+            },
+            {
+              "fieldId": "strategy_id",
+              "fieldValue": "={{ $('Load active strategy').all().length > 0 ? $('Load active strategy').first().json.id : null }}"
+            },
+            {
+              "fieldId": "setter_email",
+              "fieldValue": "={{ $('Code: Normalize context').first().json.setter_email || null }}"
+            },
+            {
+              "fieldId": "setter_name",
+              "fieldValue": "={{ $('Code: Normalize context').first().json.setter_name || null }}"
+            },
+            {
+              "fieldId": "lead_resolved_name",
+              "fieldValue": "={{ $('Code: Normalize context').first().json.lead_resolved_name || null }}"
+            },
+            {
+              "fieldId": "thread_snapshot",
+              "fieldValue": "={{ $('Code: Normalize context').first().json.thread_messages }}"
+            },
+            {
+              "fieldId": "has_known_store",
+              "fieldValue": "={{ $('Code: Detect store signal').first().json.has_known_store }}"
+            },
+            {
+              "fieldId": "classifier_version_id",
+              "fieldValue": "={{ $('Index prompts').first().json.classifier?.id || null }}"
+            },
+            {
+              "fieldId": "generator_version_id",
+              "fieldValue": "={{ $('Index prompts').first().json.generator?.id || null }}"
+            },
+            {
+              "fieldId": "validator_version_id",
+              "fieldValue": "={{ $('Index prompts').first().json.validator?.id || null }}"
+            },
+            {
+              "fieldId": "campaign_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.campaign_id || null }}"
+            }
+          ]
+        },
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        2288,
+        -960
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "8f4a1d2e-7b3c-4f5e-9a8d-c0e1f2a3b4c5",
+      "name": "Parse AI outputs",
+      "parameters": {
+        "jsCode": "// Parsea de forma robusta los outputs de los 3 nodos IA\n// Tolerante a code blocks, whitespace, texto antes/despues\nfunction safeParseJson(text) {\n  if (!text) return null;\n  let cleaned = String(text).trim();\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/i, '');\n  try {\n    return JSON.parse(cleaned);\n  } catch (e) {\n    const firstBrace = cleaned.indexOf('{');\n    const lastBrace = cleaned.lastIndexOf('}');\n    if (firstBrace >= 0 && lastBrace > firstBrace) {\n      try { return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1)); }\n      catch (e2) { return null; }\n    }\n    return null;\n  }\n}\n\nconst classifierResp = $('Clasificador MEGA').item.json;\nconst generatorResp = $('Generador MEGA').item.json;\nconst validatorResp = $('Validador MEGA').item.json;\n\nconst classification = safeParseJson(classifierResp && classifierResp.content && classifierResp.content[0] && classifierResp.content[0].text) || {};\nconst generation = safeParseJson(generatorResp && generatorResp.content && generatorResp.content[0] && generatorResp.content[0].text) || {};\nconst validation = safeParseJson(validatorResp && validatorResp.content && validatorResp.content[0] && validatorResp.content[0].text) || {};\n\nif (!Array.isArray(validation.errores_criticos)) validation.errores_criticos = [];\nif (!Array.isArray(validation.razones_fallo)) validation.razones_fallo = [];\n\nconst usageClassifier = (classifierResp && classifierResp.usage) || {};\nconst usageGenerator = (generatorResp && generatorResp.usage) || {};\nconst usageValidator = (validatorResp && validatorResp.usage) || {};\n\nconst tokensTotal =\n  (usageClassifier.input_tokens || 0) + (usageClassifier.output_tokens || 0) +\n  (usageGenerator.input_tokens || 0) + (usageGenerator.output_tokens || 0) +\n  (usageValidator.input_tokens || 0) + (usageValidator.output_tokens || 0);\n\n\n// GUARD: si el Generador no produjo turn_1, descartar el caso explicitamente.\n// Causa raiz vista: Generador devuelve JSON malformado, safeParseJson cae al\n// fallback {} y el Validador puntua el output sin turn_1 valido (ej. caso\n// 96dd766c de rafael211@icloud.com con score=100 y turn_1 vacio).\nconst _t1 = generation && (generation.turn_1 || generation.turn_2 || '');\nif (!_t1 || String(_t1).trim().length === 0) {\n  if (!Array.isArray(validation.errores_criticos)) validation.errores_criticos = [];\n  validation.errores_criticos = [\n    'turn_1 missing or generator output malformed',\n    ...validation.errores_criticos\n  ];\n  validation.score = 0;\n  validation.validado = false;\n}\n\nreturn [{\n  json: {\n    classification: classification,\n    generation: generation,\n    validation: validation,\n    generation_metadata: {\n      modelo: (generatorResp && generatorResp.model) || null,\n      patron_aplicado: generation.patron_aplicado || null,\n      tono_aplicado: generation.tono_aplicado || null,\n      hora_propuesta: generation.hora_propuesta || null,\n      notas: generation.notas || null,\n      tokens: usageGenerator\n    },\n    models: {\n      clasificador: (classifierResp && classifierResp.model) || null,\n      generador: (generatorResp && generatorResp.model) || null,\n      validador: (validatorResp && validatorResp.model) || null\n    },\n    tokens_total: tokensTotal,\n    parse_ok: {\n      classification: !!(classification && (classification.es_lead_valido !== undefined || classification.patron !== undefined)),\n      generation: !!generation.turn_1,\n      validation: !!validation.checks\n    }\n  }\n}];"
+      },
+      "position": [
+        1312,
+        -320
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-a012-b345c678d901",
+      "name": "Pipeline start",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1e2d3c4-b5a6-4789-9012-345678901234",
+              "name": "pipeline_start_ms",
+              "type": "number",
+              "value": "={{ $now.toMillis() }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "position": [
+        -320,
+        -144
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "b2c3d4e5-f6a7-4890-b123-c456d789e012",
+      "name": "Lead valido?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c3d4e5f6-a7b8-4901-c234-d567e890f123",
+              "leftValue": "={{ $json._ruta }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "CONTINUAR"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        880,
+        -320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "d4e5f6a7-b8c9-4012-d345-e678f901a234",
+      "name": "Insert rejected row",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "smartlead_lead_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}"
+            },
+            {
+              "fieldId": "smartlead_thread_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.stats_id || null }}"
+            },
+            {
+              "fieldId": "hubspot_contact_id",
+              "fieldValue": "={{ $('Search contacts').item.json.id }}"
+            },
+            {
+              "fieldId": "lead_name",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.lead_name || (($('Search contacts').item.json.properties.firstname || '') + ($('Search contacts').item.json.properties.lastname ? ' ' + $('Search contacts').item.json.properties.lastname : '')).trim() || 'Lead' }}"
+            },
+            {
+              "fieldId": "lead_email",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_lead_email }}"
+            },
+            {
+              "fieldId": "reply_original",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.reply_message.text }}"
+            },
+            {
+              "fieldId": "reply_timestamp",
+              "fieldValue": "={{ $now }}"
+            },
+            {
+              "fieldId": "segmento",
+              "fieldValue": "={{ $('Search contacts').item.json.properties.gtm__avatar_segment || 'MEGA' }}"
+            },
+            {
+              "fieldId": "classification_output",
+              "fieldValue": "={{ $json.clasificacion }}"
+            },
+            {
+              "fieldId": "patron",
+              "fieldValue": "={{ $json.clasificacion ? $json.clasificacion.patron : null }}"
+            },
+            {
+              "fieldId": "razones_fallo",
+              "fieldValue": "={{ [$json.razon_fallo] }}"
+            },
+            {
+              "fieldId": "errores_criticos",
+              "fieldValue": "={{ [] }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "auto_rejected"
+            },
+            {
+              "fieldId": "validado",
+              "fieldValue": "={{ false }}"
+            },
+            {
+              "fieldId": "tokens_consumed",
+              "fieldValue": "={{ (($('Clasificador MEGA').item.json.usage && $('Clasificador MEGA').item.json.usage.input_tokens) || 0) + (($('Clasificador MEGA').item.json.usage && $('Clasificador MEGA').item.json.usage.output_tokens) || 0) }}"
+            },
+            {
+              "fieldId": "models_used",
+              "fieldValue": "={{ ({clasificador: $('Clasificador MEGA').item.json.model || null, generador: null, validador: null}) }}"
+            },
+            {
+              "fieldId": "prompt_versions",
+              "fieldValue": "={{ ({classifier: 'v1.0', generator: null, validator: null}) }}"
+            },
+            {
+              "fieldId": "pipeline_duration_seconds",
+              "fieldValue": "={{ Math.round(($now.toMillis() - $('Pipeline start').item.json.pipeline_start_ms) / 1000) }}"
+            }
+          ]
+        },
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        1104,
+        -80
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "e5f6a7b8-c9d0-4123-e456-f789a012b345",
+      "name": "Compute final status",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f6a7b8c9-d0e1-4234-f567-a890b123c456",
+              "name": "final_status",
+              "type": "string",
+              "value": "={{ ($json.validation.score >= ($('Index prompts').first().json.generator.auto_send_min_score ?? 95) && $json.validation.errores_criticos.length === 0 && $('Index prompts').first().json.generator.auto_send_enabled === true) ? 'ready_to_send' : ($json.validation.score >= 90 && $json.validation.errores_criticos.length === 0 && $('Code: Detect store signal').first().json.has_known_store !== true && ($('Search contacts').first().json.properties.gtm__avatar_segment || 'MEGA') === 'MEGA') ? 'pending_quick_review' : 'pending_review' }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "position": [
+        1392,
+        -48
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "a7b8c9d0-e1f2-4345-a678-b901c234d567",
+      "name": "Should auto-send?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b8c9d0e1-f2a3-4456-b789-c012d345e678",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "ready_to_send"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        1696,
+        -288
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "disabled": true,
+      "id": "c9d0e1f2-a3b4-4567-c890-d123e456f789",
+      "name": "STOP - Genesis no soportado",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1f2a3b4-c5d6-4789-e012-f345a678b901",
+              "name": "stop_reason",
+              "type": "string",
+              "value": "segmento Genesis no soportado aun - derivar a triage manual"
+            },
+            {
+              "id": "f2a3b4c5-d6e7-4890-f123-a456b789c012",
+              "name": "segmento_detectado",
+              "type": "string",
+              "value": "Genesis"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "position": [
+        400,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "disabled": true,
+      "id": "d0e1f2a3-b4c5-4678-d901-e234f567a890",
+      "name": "STOP - Prosperitas no soportado",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a3b4c5d6-e7f8-4901-a234-b567c890d123",
+              "name": "stop_reason",
+              "type": "string",
+              "value": "segmento Prosperitas no soportado aun - derivar a triage manual"
+            },
+            {
+              "id": "b4c5d6e7-f8a9-4012-b345-c678d901e234",
+              "name": "segmento_detectado",
+              "type": "string",
+              "value": "Prosperitas"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "position": [
+        400,
+        144
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "e1f2a3b4-c5d6-4789-e012-f345a678b901_send",
+      "name": "Smartlead reply-to-thread",
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  email_stats_id: $json.stats_id,\n  email_body: $json.turn_1_text.split(/\\n{2,}/).map(p => '<div>' + p.split('\\n').join('<br>') + '</div>').join('<br>'),\n  reply_message_id: $json.reply_message_id,\n  reply_email_time: $json.reply_email_time || new Date().toISOString(),\n  reply_email_body: $json.turn_1_text.split(/\\n{2,}/).map(p => '<div>' + p.split('\\n').join('<br>') + '</div>').join('<br>')\n}) }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $json.campaign_id }}/reply-email-thread"
+      },
+      "position": [
+        2320,
+        -528
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "f2a3b4c5-d6e7-4890-f123-a456b789c012_sent",
+      "name": "Mark sent",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "sent"
+            },
+            {
+              "fieldId": "sent_at",
+              "fieldValue": "={{ $now }}"
+            },
+            {
+              "fieldId": "sent_via",
+              "fieldValue": "smartlead_api"
+            }
+          ]
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $('Dry run mode?').item.json.pipeline_id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        2576,
+        -592
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "a3b4c5d6-e7f8-4901-a234-b567c890d123_err",
+      "name": "Mark error_send",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "error_send"
+            },
+            {
+              "fieldId": "outcome_details",
+              "fieldValue": "={{ ({error: 'Smartlead send failed', timestamp: $now.toISO(), upstream_error: $json.error || $json}) }}"
+            }
+          ]
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $('Dry run mode?').item.json.pipeline_id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        2656,
+        -432
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "b1c2d3e4-f5a6-4789-b012-c345d678e901",
+      "name": "Trigger B - From Lovable",
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "turn1-send-from-lovable",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        -384,
+        320
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "b1c2d3e4-f5a6-4789-b012-c345d678e901"
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "c2d3e4f5-a6b7-4890-c123-d456e789f012",
+      "name": "Load row by id",
+      "parameters": {
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $('Trigger B - From Lovable').item.json.body.pipeline_id || $('Trigger B - From Lovable').item.json.query.pipeline_id }}"
+            }
+          ]
+        },
+        "limit": 1,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        -160,
+        320
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "d3e4f5a6-b7c8-4901-d234-e567f890a123",
+      "name": "Prepare send ctx A",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "pipeline_id",
+              "type": "string",
+              "value": "={{ $('Create a row').item.json.id }}"
+            },
+            {
+              "id": "p2",
+              "name": "campaign_id",
+              "type": "string",
+              "value": "={{ $('When Executed by Another Workflow').item.json.body.campaign_id }}"
+            },
+            {
+              "id": "p3",
+              "name": "stats_id",
+              "type": "string",
+              "value": "={{ $('When Executed by Another Workflow').item.json.body.stats_id }}"
+            },
+            {
+              "id": "p4",
+              "name": "reply_message_id",
+              "type": "string",
+              "value": "={{ ($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.message_id) || $('When Executed by Another Workflow').item.json.body.message_id }}"
+            },
+            {
+              "id": "p5",
+              "name": "reply_email_time",
+              "type": "string",
+              "value": "={{ $('When Executed by Another Workflow').item.json.body.time_replied || $('When Executed by Another Workflow').item.json.body.event_timestamp || new Date().toISOString() }}"
+            },
+            {
+              "id": "p6",
+              "name": "turn_1_text",
+              "type": "string",
+              "value": "={{ $('Parse AI outputs').item.json.generation.turn_1 }}"
+            },
+            {
+              "id": "p7",
+              "name": "ctx_source",
+              "type": "string",
+              "value": "trigger_a_inline"
+            },
+            {
+              "id": "p8_dry",
+              "name": "dry_run",
+              "type": "boolean",
+              "value": "={{ false }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        1984,
+        -304
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "e4f5a6b7-c8d9-4012-e345-f678a901b234",
+      "name": "Prepare send ctx B",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "q1",
+              "name": "pipeline_id",
+              "type": "string",
+              "value": "={{ $('Load row by id').first().json.id }}"
+            },
+            {
+              "id": "q2",
+              "name": "campaign_id",
+              "type": "string",
+              "value": "={{ $json[0]?.id ?? $json.id ?? null }}"
+            },
+            {
+              "id": "q3",
+              "name": "stats_id",
+              "type": "string",
+              "value": "={{ $('Load row by id').first().json.smartlead_thread_id }}"
+            },
+            {
+              "id": "q4",
+              "name": "reply_message_id",
+              "type": "string",
+              "value": "={{ ($('Load row by id').first().json.outcome_details && $('Load row by id').first().json.outcome_details.reply_message_id) || null }}"
+            },
+            {
+              "id": "q5",
+              "name": "reply_email_time",
+              "type": "string",
+              "value": "={{ ($('Load row by id').first().json.outcome_details && $('Load row by id').first().json.outcome_details.time_replied) || new Date().toISOString() }}"
+            },
+            {
+              "id": "q6",
+              "name": "turn_1_text",
+              "type": "string",
+              "value": "={{ $('Load row by id').first().json.turn_1_final || $('Load row by id').first().json.turn_1_generated }}"
+            },
+            {
+              "id": "q7",
+              "name": "ctx_source",
+              "type": "string",
+              "value": "trigger_b_lovable"
+            },
+            {
+              "id": "q8_dry",
+              "name": "dry_run",
+              "type": "boolean",
+              "value": "={{ false }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        144,
+        320
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "f5a6b7c8-d9e0-4123-f456-a789b012c345",
+      "name": "Webhook Response",
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ ({ ok: true, pipeline_id: $('Prepare send ctx B').item.json.pipeline_id }) }}"
+      },
+      "position": [
+        336,
+        448
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "f6e7d8c9-b0a1-4234-f567-a890b123c456",
+      "name": "Dry run mode?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "dry-cond-1",
+              "leftValue": "={{ $json.dry_run }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "boolean"
+              },
+              "rightValue": "={{ true }}"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        2176,
+        -528
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "a7b8c9d0-e1f2-4345-a678-b901c234d568_dry",
+      "name": "Mark dry_run only",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "dry_run_only"
+            },
+            {
+              "fieldId": "sent_via",
+              "fieldValue": "dry_run"
+            },
+            {
+              "fieldId": "outcome_details",
+              "fieldValue": "={{ ({dry_run: true, would_have_sent_to: $json.stats_id, would_have_sent_text: $json.turn_1_text, ctx_source: $json.ctx_source, timestamp: $now.toISO()}) }}"
+            }
+          ]
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $json.pipeline_id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        2608,
+        -704
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "wf02v2-load-prompts",
+      "name": "Load active prompts",
+      "parameters": {
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "turn_type",
+              "keyValue": "turn1"
+            },
+            {
+              "condition": "eq",
+              "keyName": "is_active",
+              "keyValue": true
+            }
+          ]
+        },
+        "limit": 10,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "returnAll": false,
+        "tableId": "cl001_p007_prompt_versions"
+      },
+      "position": [
+        -296,
+        -344
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "wf02v2-index-prompts",
+      "name": "Index prompts",
+      "parameters": {
+        "jsCode": "// Index prompts: weighted random pick para A/B testing.\n//\n// Cambio v2: en vez de elegir UNA versión activa por combo, ahora puede haber\n// múltiples versiones activas. Pick weighted random según `traffic_weight`\n// (default 100 → si solo hay una, equivale a \"siempre esa\").\n//\n// Bifurcación por subgroup (MEGA solo): no_store / has_store / null.\n// Fallback en orden: exact match → segment default (subgroup=null) → MEGA + subgroup → MEGA default.\n\nconst promptRows = $items().map(i => i.json);\nconst segmentRaw = ($('Search contacts').first()?.json?.properties?.gtm__avatar_segment)\n                || ($('Search contacts').first()?.json?.segmento)\n                || 'MEGA';\nconst segment = String(segmentRaw).trim() || 'MEGA';\n\nconst has_known_store = $('Code: Detect store signal').first()?.json?.has_known_store ?? null;\nlet subgroup_key = null;\nif (segment === 'MEGA') {\n  if (has_known_store === true) subgroup_key = 'has_store';\n  else if (has_known_store === false) subgroup_key = 'no_store';\n}\n\nconst indexed = {};\nindexed._segment_used = segment;\nindexed._subgroup_used = subgroup_key;\nindexed._has_known_store = has_known_store;\nindexed._fallback_used = false;\n\nfunction weightedPick(items) {\n  if (!items || items.length === 0) return null;\n  if (items.length === 1) return items[0];\n  const total = items.reduce((s, i) => s + (typeof i.traffic_weight === 'number' ? i.traffic_weight : 100), 0);\n  if (total <= 0) return items[0];\n  let r = Math.random() * total;\n  for (const it of items) {\n    r -= (typeof it.traffic_weight === 'number' ? it.traffic_weight : 100);\n    if (r <= 0) return it;\n  }\n  return items[items.length - 1];\n}\n\nfunction isMatchAll(ptype, seg, sub) {\n  return promptRows.filter(r => r.prompt_type === ptype\n    && r.is_active === true\n    && r.turn_type === 'turn1'\n    && r.segmento === seg\n    && (sub === null ? (r.subgroup === null || r.subgroup === undefined || r.subgroup === '') : r.subgroup === sub)\n  );\n}\n\nconst PROMPT_TYPES = ['classifier', 'generator', 'validator'];\n\nfor (const ptype of PROMPT_TYPES) {\n  let candidates;\n  let fallback = false;\n  // Orden: exact (segment+subgroup) → segment default → MEGA+subgroup → MEGA default\n  candidates = subgroup_key ? isMatchAll(ptype, segment, subgroup_key) : [];\n  if (candidates.length === 0) {\n    candidates = isMatchAll(ptype, segment, null);\n    if (candidates.length > 0) fallback = subgroup_key !== null;\n  }\n  if (candidates.length === 0 && subgroup_key) {\n    candidates = isMatchAll(ptype, 'MEGA', subgroup_key);\n    if (candidates.length > 0) fallback = true;\n  }\n  if (candidates.length === 0) {\n    candidates = isMatchAll(ptype, 'MEGA', null);\n    if (candidates.length > 0) fallback = true;\n  }\n\n  const chosen = weightedPick(candidates);\n\n  if (chosen) {\n    indexed[ptype] = {\n      id: chosen.id,\n      version: chosen.version,\n      prompt_system: chosen.prompt_system,\n      model: chosen.model,\n      temperature: typeof chosen.temperature === 'number' ? chosen.temperature : 0,\n      max_tokens: chosen.max_tokens || 2048,\n      subgroup: chosen.subgroup || null,\n      auto_send_enabled: chosen.auto_send_enabled === true,\n      traffic_weight: typeof chosen.traffic_weight === 'number' ? chosen.traffic_weight : 100,\n      _used_segment: chosen.segmento,\n      _candidate_count: candidates.length,\n    };\n    if (fallback) indexed._fallback_used = true;\n  }\n}\n\nreturn [{ json: indexed }];\n"
+      },
+      "position": [
+        -96,
+        -344
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "wf02v2-load-strategy",
+      "name": "Load active strategy",
+      "parameters": {
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "segmento",
+              "keyValue": "={{ $('Search contacts').item.json.properties.gtm__avatar_segment || 'MEGA' }}"
+            },
+            {
+              "condition": "eq",
+              "keyName": "is_active",
+              "keyValue": true
+            }
+          ]
+        },
+        "limit": 1,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "returnAll": false,
+        "tableId": "cl001_p007_strategies"
+      },
+      "position": [
+        -228,
+        -324
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "wf02v2-resolve-campaign-id",
+      "name": "Resolve campaign_id",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "method": "GET",
+        "options": {},
+        "sendBody": false,
+        "sendHeaders": false,
+        "url": "=https://server.smartlead.ai/api/v1/leads/{{ $json.smartlead_lead_id }}/campaigns"
+      },
+      "position": [
+        -32,
+        320
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "wf02v2-sl-lookup-mailbox",
+      "name": "Smartlead: Lookup mailbox",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "method": "GET",
+        "options": {
+          "timeout": 8000
+        },
+        "sendBody": false,
+        "sendHeaders": false,
+        "url": "=https://server.smartlead.ai/api/v1/email-accounts?username={{ $('When Executed by Another Workflow').item.json.body.from_email }}&limit=1"
+      },
+      "position": [
+        16,
+        -100
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "continueOnFail": true,
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "wf02v2-sl-get-history",
+      "name": "Smartlead: Get message history",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "method": "GET",
+        "options": {
+          "timeout": 10000
+        },
+        "sendBody": false,
+        "sendHeaders": false,
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $('When Executed by Another Workflow').item.json.body.campaign_id }}/leads/{{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}/message-history"
+      },
+      "position": [
+        192,
+        -100
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "id": "wf02v2-code-normalize-context",
+      "name": "Code: Normalize context",
+      "parameters": {
+        "jsCode": "// Code: Normalize context — produce setter + thread + lead name normalized.\n// Inputs disponibles vía referencias explícitas (NO $json para evitar coupling).\nconst webhook = $('When Executed by Another Workflow').item.json.body || {};\nconst hubspot = $('Search contacts').item.json || {};\nconst mailboxResp = $('Smartlead: Lookup mailbox').first()?.json;\nconst historyResp = $('Smartlead: Get message history').first()?.json;\n\n// === setter ===\nconst setter_email = (webhook.from_email || '').toLowerCase().trim();\n// La response de /email-accounts puede ser un array directo o un wrapper { data: [...] }\nlet mailboxItem = null;\nif (Array.isArray(mailboxResp)) mailboxItem = mailboxResp[0];\nelse if (mailboxResp && Array.isArray(mailboxResp.data)) mailboxItem = mailboxResp.data[0];\nelse if (mailboxResp && mailboxResp.from_name) mailboxItem = mailboxResp;\nconst setter_name = (mailboxItem && (mailboxItem.from_name || mailboxItem.fromName)) || '';\nconst setter_first_name = setter_name.split(' ')[0] || '';\n\n// === lead_resolved_name ===\n// Prioridad: HubSpot firstname → webhook to_name first word → null. Nunca \"Lead\" placeholder.\nfunction cleanName(s) {\n  if (!s) return null;\n  const t = String(s).trim();\n  if (!t) return null;\n  // Filtro de placeholders evidentes\n  const blacklist = ['lead', 'null', 'undefined', 'none', '-', '—', 'n/a', 'na'];\n  if (blacklist.includes(t.toLowerCase())) return null;\n  return t;\n}\nconst hsFirstName = cleanName(hubspot.properties && hubspot.properties.firstname);\nconst webhookToName = cleanName((webhook.to_name || '').split(' ')[0]);\nconst webhookLeadName = cleanName(webhook.lead_name);\nconst lead_resolved_name = hsFirstName || webhookLeadName || webhookToName || null;\n\n// === thread_messages + thread_summary ===\nconst rawHistory = (historyResp && historyResp.history) || [];\n// Normalizar y limpiar HTML para text legible\nfunction stripHtml(html) {\n  if (!html) return '';\n  return String(html)\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/(p|div|li)>/gi, '\\n')\n    .replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n}\n\nconst thread_messages = rawHistory.map(m => ({\n  type: m.type,\n  seq: m.email_seq_number,\n  time: m.time,\n  subject: m.subject || null,\n  body_text: stripHtml(m.email_body || '').slice(0, 2000),\n}));\n\n// Summary para el prompt: últimos 4 mensajes max, body truncated a 600 chars\nconst tail = thread_messages.slice(-4);\nconst thread_summary = tail.length === 0\n  ? '(sin historial disponible)'\n  : tail.map(m => {\n      const dir = m.type === 'SENT' ? '→ Enviado' : '← Reply lead';\n      const when = m.time ? m.time.slice(0, 10) : '?';\n      const body = m.body_text.slice(0, 600).replace(/\\n/g, '\\n  ');\n      return `${dir} (${when}, seq=${m.seq}):\\n  ${body}`;\n    }).join('\\n\\n');\n\nreturn [{\n  json: {\n    setter_email,\n    setter_name,\n    setter_first_name,\n    lead_resolved_name,\n    thread_messages,\n    thread_summary,\n  }\n}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        368,
+        -100
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "wf02v2-code-detect-store",
+      "name": "Code: Detect store signal",
+      "parameters": {
+        "jsCode": "// Heurísticas para detectar si el lead TIENE tienda online conocida.\n// Output: has_known_store: true | false | null\n//   true  → evidencia de tienda\n//   false → SOLO si el lead lo dice explícitamente en el reply\n//   null  → desconocido (default conservador → routing usa catch-all)\n//\n// Política revisada 2026-05-12: el detector NO marca false por ausencia de\n// evidencia. Antes, \"@gmail + sin website en HubSpot\" caía como false agresivo\n// y dirigía a leads con tienda real al flujo no_store (peligroso si auto-send\n// estuviese activo). Ahora false requiere afirmación explícita del lead.\n\nconst webhook = $('When Executed by Another Workflow').item.json.body || {};\nconst hubspot = $('Search contacts').item.json || {};\nconst props = hubspot.properties || {};\n\nconst website = String(props.website || '').toLowerCase();\nconst industry = String(props.industry || '').toUpperCase();\nconst leadEmail = String(webhook.sl_lead_email || '').toLowerCase();\nconst replyText = String((webhook.reply_message && webhook.reply_message.text) || '').toLowerCase();\n\n// Dominios extraídos (del website y del email)\nconst websiteDomain = website.replace(/^https?:\\/\\//,'').split('/')[0];\nconst emailDomain = (leadEmail.split('@')[1] || '');\n\n// Señales positivas (has store)\nconst websiteHasShopPath = /\\/(shop|tienda|store|productos?|carrito|catalogo?|checkout)\\b/.test(website);\nconst websiteIsEcomPlatform = /(myshopify|prestashop|wixsite\\.com\\/shop|bigcartel|tiendanube|woocommerce|squarespace\\.com\\/products)/.test(website);\nconst industryIsRetail = ['APPAREL_FASHION','RETAIL','CONSUMER_GOODS','COSMETICS','FOOD_BEVERAGES','LUXURY_GOODS_JEWELRY'].some(k => industry.includes(k));\nconst replyHasStore = /(mi tienda|mi shop|mi web|mi tienda online|vendo en|en shopify|en prestashop|mis productos|mi marca|facturo|mi negocio online|vendemos|tenemos productos|nuestra tienda)/.test(replyText);\n\n// NUEVO: el DOMINIO del website o del email contiene palabras-clave de tienda\nconst domainSignal = /(shop|store|tienda|shoes|wear|hat|boutique|moda|fashion|jewelr|joya|cosmetic|beauty|atelier|brand|skate|surf)/.test(\n  websiteDomain + ' ' + emailDomain\n);\n\n// Señales negativas (no store) — SOLO desde reply explícito\nconst replyNoStore = /(no tengo tienda|no la tengo|todav[ií]a no|estoy pensando|quiero montar|quiero empezar|estoy empezando|no he empezado|sin tienda|todavia no|aun no)/.test(replyText);\n\nconst emailIsPersonal = /@(gmail|hotmail|yahoo|outlook|icloud|live|me\\.com)\\./.test(leadEmail);\nconst corporateEmail = !emailIsPersonal && !!emailDomain;\n\nconst positiveCount = [websiteHasShopPath, websiteIsEcomPlatform, industryIsRetail, replyHasStore, domainSignal, corporateEmail].filter(Boolean).length;\n\nlet has_known_store;\nif (replyNoStore && !replyHasStore) {\n  has_known_store = false;          // ÚNICA forma de llegar a false: el lead lo dice\n} else if (replyHasStore || websiteIsEcomPlatform || websiteHasShopPath || domainSignal) {\n  has_known_store = true;           // señal fuerte (incluido domainSignal)\n} else if (positiveCount >= 2) {\n  has_known_store = true;           // múltiples señales medias\n} else {\n  has_known_store = null;           // desconocido (default conservador, va al catch-all)\n}\n\nreturn [{\n  json: {\n    has_known_store,\n    evidence: {\n      website, websiteDomain, websiteHasShopPath, websiteIsEcomPlatform,\n      emailDomain, emailIsPersonal, corporateEmail,\n      industry, industryIsRetail,\n      domainSignal,\n      replyHasStore, replyNoStore,\n      positiveCount,\n    }\n  }\n}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        544,
+        -100
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "continueOnFail": true,
+      "credentials": {
+        "postgres": {
+          "id": "rrWHhrv5MXmcgaPY",
+          "name": "Supabase CIO - data-intelligence"
+        }
+      },
+      "id": "wf02v2-pg-reload-row",
+      "name": "Postgres: Reload pipeline row",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT lead_email, hubspot_contact_id, turn_1_final, turn_1_generated, setter_email, setter_name, smartlead_lead_id, smartlead_thread_id, segmento FROM cl001_p007_turn1_pipeline WHERE id = '{{ $('Dry run mode?').item.json.pipeline_id }}' LIMIT 1"
+      },
+      "position": [
+        2780,
+        -592
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4
+    },
+    {
+      "id": "wf02v2-code-prep-hubspot",
+      "name": "Code: Prep HubSpot context",
+      "parameters": {
+        "jsCode": "// Construye el ctx para crear el engagement de email en HubSpot.\nconst reload = $input.first()?.json || {};\nconst pipelineId = $('Dry run mode?').item.json.pipeline_id;\n\n// campaign_id: Trigger B usa Resolve campaign_id; Trigger A lo trae en webhook body\nlet campaign_id = null;\ntry {\n  const rci = $('Resolve campaign_id').first()?.json;\n  if (rci) campaign_id = Array.isArray(rci) ? rci[0]?.id : rci.id;\n} catch (e) {}\nif (!campaign_id) {\n  try {\n    campaign_id = $('When Executed by Another Workflow').item.json.body?.campaign_id;\n  } catch (e) {}\n}\n\nconst body = reload.turn_1_final || reload.turn_1_generated || '';\nconst htmlBody = body.split(/\\n{2,}/).map(p => '<div>' + p.split('\\n').join('<br>') + '</div>').join('<br>');\nconst setterName = reload.setter_name || '';\nconst firstName = setterName.split(' ')[0] || '';\nconst lastName = setterName.split(' ').slice(1).join(' ') || '';\n\nreturn [{\n  json: {\n    pipeline_id: pipelineId,\n    lead_email: (reload.lead_email || '').toLowerCase(),\n    campaign_id: String(campaign_id || ''),\n    hubspot_contact_id: reload.hubspot_contact_id,\n    setter_email: reload.setter_email,\n    setter_first_name: firstName,\n    setter_last_name: lastName,\n    body_text: body,\n    body_html: htmlBody,\n  }\n}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        2960,
+        -592
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "continueOnFail": true,
+      "credentials": {
+        "postgres": {
+          "id": "rrWHhrv5MXmcgaPY",
+          "name": "Supabase CIO - data-intelligence"
+        }
+      },
+      "id": "wf02v2-pg-lookup-thread",
+      "name": "Postgres: Get or create hs_thread_id",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "WITH ins AS (\n  INSERT INTO sl_thread_map (lead_email, campaign_id, hs_contact_id, hs_thread_id)\n  VALUES (\n    '{{ $json.lead_email.replaceAll(\"'\",\"\").replaceAll('\"','') }}',\n    {{ $json.campaign_id }},\n    '{{ $json.hubspot_contact_id }}',\n    gen_random_uuid()::text\n  )\n  ON CONFLICT (lead_email, campaign_id) DO NOTHING\n  RETURNING hs_thread_id, hs_contact_id\n)\nSELECT\n  COALESCE(\n    (SELECT hs_thread_id FROM ins),\n    (SELECT hs_thread_id FROM sl_thread_map\n     WHERE lead_email = '{{ $json.lead_email.replaceAll(\"'\",\"\").replaceAll('\"','') }}'\n     AND campaign_id = {{ $json.campaign_id }})\n  ) AS hs_thread_id,\n  COALESCE(\n    (SELECT hs_contact_id FROM ins),\n    (SELECT hs_contact_id FROM sl_thread_map\n     WHERE lead_email = '{{ $json.lead_email.replaceAll(\"'\",\"\").replaceAll('\"','') }}'\n     AND campaign_id = {{ $json.campaign_id }})\n  ) AS hs_contact_id,\n  EXISTS(SELECT 1 FROM ins) AS is_new_thread"
+      },
+      "position": [
+        3140,
+        -592
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4
+    },
+    {
+      "continueOnFail": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "Tgw8UOm4Rk88kpnX",
+          "name": "Token C.io HubSpot"
+        }
+      },
+      "id": "wf02v2-hubspot-create-email",
+      "name": "HubSpot: Create EMAIL",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  properties: {\n    hs_timestamp: new Date().toISOString(),\n    hs_email_direction: 'EMAIL',\n    hs_email_status: 'SENT',\n    hs_email_subject: '',\n    hs_email_text: $('Code: Prep HubSpot context').first().json.body_text,\n    hs_email_html: $('Code: Prep HubSpot context').first().json.body_html,\n    hs_email_thread_id: ($json[0]?.hs_thread_id) || ($json.hs_thread_id) || '',\n    hs_email_message_id: '<wf02v2-' + $('Code: Prep HubSpot context').first().json.pipeline_id + '@n8n>',\n    hs_email_headers: JSON.stringify({\n      from: { email: $('Code: Prep HubSpot context').first().json.setter_email, firstName: $('Code: Prep HubSpot context').first().json.setter_first_name, lastName: $('Code: Prep HubSpot context').first().json.setter_last_name },\n      to: [{ email: $('Code: Prep HubSpot context').first().json.lead_email }],\n      cc: [], bcc: []\n    })\n  },\n  associations: $('Code: Prep HubSpot context').first().json.hubspot_contact_id ? [{\n    to: { id: $('Code: Prep HubSpot context').first().json.hubspot_contact_id },\n    types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 198 }]\n  }] : []\n}) }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://api.hubapi.com/crm/v3/objects/emails"
+      },
+      "position": [
+        3320,
+        -592
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "id": "skip-invalid-payload",
+      "name": "Skip - build invalid payload",
+      "parameters": {
+        "jsCode": "// Cuando el clasificador marca el lead como NO valido, saltamos el\n// Generador + Validador. Reconstruimos un objeto compatible con Create a row\n// con final_status='auto_rejected' y razon explicita.\n//\n// Esto evita que el Generador alucine outputs sobre leads no-MEGA o explicitamente\n// descartados por el clasificador (caso Nancy/Guillem hoy 2026-05-12).\n\nconst item = $input.first().json;\nconst clasificacion = item.clasificacion || {};\nconst ruta = item._ruta || 'STOP_UNKNOWN';\nconst razon = item.razon_fallo || 'lead no valido segun clasificador';\n\nreturn [{ json: {\n  classification: clasificacion,\n  generation: { turn_1: null, patron_aplicado: null, tono_aplicado: null, hora_propuesta: null, notas: null },\n  validation: {\n    score: 0,\n    validado: false,\n    errores_criticos: ['skip: ' + ruta],\n    razones_fallo: [razon],\n    checks: {}\n  },\n  generation_metadata: { skip_reason: ruta },\n  models: {\n    clasificador: ($('Index prompts').first().json.classifier?.model) || null,\n    generador: null,\n    validador: null\n  },\n  tokens_total: 0,\n  parse_ok: { classification: true, generation: false, validation: false },\n  final_status: 'auto_rejected'\n}}];\n"
+      },
+      "position": [
+        1184,
+        144
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "smartleadApi": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "filter-active-campaign",
+      "name": "Filter active campaign",
+      "parameters": {
+        "jsCode": "// Filtra las campañas de Smartlead para el send post-aprobación.\n//\n// Política de selección (en orden):\n//   1. Si la pipeline row tiene campaign_id guardado (caso ideal, post-mayo\n//      2026) → usar exactamente esa.\n//   2. Si NO está guardado pero solo hay 1 ACTIVE → usar esa.\n//   3. Si hay múltiples ACTIVE → matchear por smartlead_thread_id contra el\n//      message-history de cada campaña hasta encontrar la que contiene este\n//      thread. Si ninguna matchea → primera ACTIVE como último recurso.\n//   4. Sin ACTIVE → primera de la lista (mejor enviar a una completed que\n//      perder el lead).\n\nconst items = $input.all().map(i => i.json);\nconst row = $('Load row by id').first()?.json || {};\nconst savedCampaignId = row.campaign_id ? String(row.campaign_id) : null;\n\n// Caso 1: row tiene campaign_id guardado\nif (savedCampaignId) {\n  const match = items.find(c => String(c.id) === savedCampaignId);\n  if (match) return [{ json: match }];\n  // Pipeline guardó campaign_id pero ya no existe en la lista actual\n  // (caso edge, lead movido manualmente). Devolvemos un objeto sintético\n  // con ese id y status ACTIVE para que el send lo intente.\n  return [{ json: { id: Number(savedCampaignId), status: 'ACTIVE', name: '(from-pipeline)' } }];\n}\n\n// Caso 2-3: fallback a heurística por status ACTIVE + thread match\nconst active = items.filter(c => (c.status || '').toUpperCase() === 'ACTIVE');\nif (active.length === 0) return [{ json: items[0] || {} }];\nif (active.length === 1) return [{ json: active[0] }];\n\n// Múltiples ACTIVE: matchear por smartlead_thread_id (stats_id)\nconst threadId = row.smartlead_thread_id;\nconst leadId = row.smartlead_lead_id;\nif (threadId && leadId) {\n  for (const c of active) {\n    try {\n      const url = 'https://server.smartlead.ai/api/v1/campaigns/' + c.id +\n                  '/leads/' + leadId + '/message-history';\n      const resp = await this.helpers.httpRequestWithAuthentication.call(\n        this, 'smartleadApi',\n        { method: 'GET', url: url, json: true }\n      );\n      const history = (resp && resp.history) ? resp.history : (Array.isArray(resp) ? resp : []);\n      if (Array.isArray(history) && history.some(m => m.stats_id === threadId)) {\n        return [{ json: c }];\n      }\n    } catch (e) {\n      continue;\n    }\n  }\n}\n// Último fallback\nreturn [{ json: active[0] }];\n"
+      },
+      "position": [
+        400,
+        -208
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "ensure-thread-row",
+      "name": "Ensure thread row",
+      "parameters": {
+        "jsCode": "// Defaults para primera respuesta al lead (no hay thread previo en sl_thread_map).\n// Garantiza que Create EMAIL se ejecute siempre — con thread vacío HubSpot\n// crea un thread nuevo asociado al contacto.\n\nconst items = $input.all();\nif (items.length > 0) return items;\n\n// Fallback: no hay match en sl_thread_map. Devolvemos 1 item con defaults para\n// que el flujo continúe a Create EMAIL en HubSpot.\nreturn [{ json: {\n  hs_thread_id: '',\n  hs_contact_id: $('Code: Prep HubSpot context').first().json.hubspot_contact_id || null,\n  fresh_thread: true,\n}}];\n"
+      },
+      "position": [
+        2400,
+        200
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    }
+  ],
+  "settings": {
+    "binaryMode": "separate",
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

@@ -1,0 +1,829 @@
+{
+  "active": true,
+  "connections": {
+    "Calc next turn_number": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Create row",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Compute final status": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Calc next turn_number",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Create row": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Should auto-send?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Dry run mode?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark dry_run only",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Mark sent",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Generador Turn 2": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Validador Turn 2",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Index prompts": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Generador Turn 2",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load active prompts": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Index prompts",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load previous turn": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load active prompts",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Parse AI outputs": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Compute final status",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Pipeline start": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load previous turn",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Prepare send ctx A": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Dry run mode?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Should auto-send?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Prepare send ctx A",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
+    "Validador Turn 2": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Parse AI outputs",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Pipeline start",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "nwY6oykHHKZmg5TA",
+  "name": "GTM - 001 - WF02b - Turn 2 Generator",
+  "nodes": [
+    {
+      "id": "trigger-wf02b-001",
+      "name": "When Executed by Another Workflow",
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "position": [
+        -560,
+        -160
+      ],
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "ps-wf02b-001",
+      "name": "Pipeline start",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ps001",
+              "name": "pipeline_start_ms",
+              "type": "number",
+              "value": "={{ $now.toMillis() }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "position": [
+        -336,
+        -160
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "lpt-wf02b-001",
+      "name": "Load previous turn",
+      "parameters": {
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $('When Executed by Another Workflow').item.json.body.previous_turn_id }}"
+            }
+          ]
+        },
+        "limit": 1,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "returnAll": false,
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        -128,
+        -160
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "anthropicApi": {
+          "id": "ES2QcyKjReuRCmDf",
+          "name": "Anthropic account"
+        }
+      },
+      "id": "gen-turn2-001",
+      "maxTries": 3,
+      "name": "Generador Turn 2",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Index prompts').first().json.generator.model,\n  max_tokens: $('Index prompts').first().json.generator.max_tokens,\n  ...($('Index prompts').first().json.generator.model && $('Index prompts').first().json.generator.model.indexOf(\"opus\") === -1 ? { temperature: $('Index prompts').first().json.generator.temperature } : {}),\n  system: $('Index prompts').first().json.generator.prompt_system,\n  messages: [{\n    role: \"user\",\n    content: \"Datos del lead:\\n- nombre: \" + ($('When Executed by Another Workflow').item.json.body.lead_name || $('Load previous turn').item.json.lead_name || 'Lead') + \"\\n- setter: \" + ($('Load previous turn').item.json.setter_name || $('When Executed by Another Workflow').item.json.body.setter_name || '(no identificado)') + \"\\n\\nTurn 1 que enviamos previamente:\\n\" + ($('Load previous turn').item.json.turn_1_final || $('Load previous turn').item.json.turn_1_generated || '(sin turn 1 disponible)') + \"\\n\\nReply del lead a nuestro Turn 1:\\n\" + (($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.text) || $('When Executed by Another Workflow').item.json.body.reply_text || '')\n  }]\n}) }}",
+        "method": "POST",
+        "nodeCredentialType": "anthropicApi",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "position": [
+        96,
+        -160
+      ],
+      "retryOnFail": true,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "waitBetweenTries": 3000
+    },
+    {
+      "credentials": {
+        "anthropicApi": {
+          "id": "ES2QcyKjReuRCmDf",
+          "name": "Anthropic account"
+        }
+      },
+      "id": "val-turn2-001",
+      "maxTries": 3,
+      "name": "Validador Turn 2",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Index prompts').first().json.validator.model,\n  max_tokens: $('Index prompts').first().json.validator.max_tokens,\n  ...($('Index prompts').first().json.validator.model && $('Index prompts').first().json.validator.model.indexOf(\"opus\") === -1 ? { temperature: $('Index prompts').first().json.validator.temperature } : {}),\n  system: $('Index prompts').first().json.validator.prompt_system,\n  messages: [{\n    role: \"user\",\n    content: \"Turn 1 que enviamos previamente:\\n\" + ($('Load previous turn').item.json.turn_1_final || $('Load previous turn').item.json.turn_1_generated || '(sin turn 1)') + \"\\n\\nReply del lead a nuestro Turn 1:\\n\" + (($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.text) || $('When Executed by Another Workflow').item.json.body.reply_text || '') + \"\\n\\nOutput del generador Turn 2:\\n\" + $('Generador Turn 2').item.json.content[0].text\n  }]\n}) }}",
+        "method": "POST",
+        "nodeCredentialType": "anthropicApi",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://api.anthropic.com/v1/messages"
+      },
+      "position": [
+        320,
+        -160
+      ],
+      "retryOnFail": true,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "parse-turn2-001",
+      "name": "Parse AI outputs",
+      "parameters": {
+        "jsCode": "function safeParseJson(text) {\n  if (!text) return null;\n  let cleaned = String(text).trim();\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/i, '');\n  try { return JSON.parse(cleaned); } catch (e) {\n    const firstBrace = cleaned.indexOf('{');\n    const lastBrace = cleaned.lastIndexOf('}');\n    if (firstBrace >= 0 && lastBrace > firstBrace) {\n      try { return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1)); } catch (e2) { return null; }\n    }\n    return null;\n  }\n}\n\nconst generatorResp = $('Generador Turn 2').item.json;\nconst validatorResp = $('Validador Turn 2').item.json;\n\nconst generation = safeParseJson(generatorResp && generatorResp.content && generatorResp.content[0] && generatorResp.content[0].text) || {};\nconst validation = safeParseJson(validatorResp && validatorResp.content && validatorResp.content[0] && validatorResp.content[0].text) || {};\n\nif (!Array.isArray(validation.errores_criticos)) validation.errores_criticos = [];\nif (!Array.isArray(validation.razones_fallo)) validation.razones_fallo = [];\n\nconst usageGenerator = (generatorResp && generatorResp.usage) || {};\nconst usageValidator = (validatorResp && validatorResp.usage) || {};\n\nconst tokensTotal =\n  (usageGenerator.input_tokens || 0) + (usageGenerator.output_tokens || 0) +\n  (usageValidator.input_tokens || 0) + (usageValidator.output_tokens || 0);\n\nreturn [{\n  json: {\n    generation: generation,\n    validation: validation,\n    generation_metadata: {\n      modelo: (generatorResp && generatorResp.model) || null,\n      situacion_detectada: generation.situacion_detectada || null,\n      hora_propuesta: generation.hora_propuesta || null,\n      transferir_a_sdr: generation.transferir_a_sdr || false,\n      notas: generation.notas || null,\n      tokens: usageGenerator\n    },\n    models: {\n      generador: (generatorResp && generatorResp.model) || null,\n      validador: (validatorResp && validatorResp.model) || null\n    },\n    tokens_total: tokensTotal\n  }\n}];"
+      },
+      "position": [
+        544,
+        -160
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "cfs-wf02b-001",
+      "name": "Compute final status",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfs001",
+              "name": "final_status",
+              "type": "string",
+              "value": "={{ ($json.validation.errores_criticos.length >= 2) ? 'auto_rejected' : 'pending_review' }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "position": [
+        768,
+        -160
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "cr-wf02b-001",
+      "name": "Create row",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "smartlead_lead_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id || $('Load previous turn').item.json.smartlead_lead_id }}"
+            },
+            {
+              "fieldId": "smartlead_thread_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.stats_id || $('Load previous turn').item.json.smartlead_thread_id || null }}"
+            },
+            {
+              "fieldId": "hubspot_contact_id",
+              "fieldValue": "={{ $('Load previous turn').item.json.hubspot_contact_id }}"
+            },
+            {
+              "fieldId": "lead_name",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.lead_name || $('Load previous turn').item.json.lead_name || 'Lead' }}"
+            },
+            {
+              "fieldId": "lead_email",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_lead_email || $('Load previous turn').item.json.lead_email }}"
+            },
+            {
+              "fieldId": "reply_original",
+              "fieldValue": "={{ ($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.text) || $('When Executed by Another Workflow').item.json.body.reply_text || '' }}"
+            },
+            {
+              "fieldId": "reply_timestamp",
+              "fieldValue": "={{ $now }}"
+            },
+            {
+              "fieldId": "segmento",
+              "fieldValue": "={{ $('Load previous turn').item.json.segmento || 'MEGA' }}"
+            },
+            {
+              "fieldId": "turn_1_generated",
+              "fieldValue": "={{ $json.generation.turn_2 }}"
+            },
+            {
+              "fieldId": "generation_metadata",
+              "fieldValue": "={{ $json.generation_metadata }}"
+            },
+            {
+              "fieldId": "validation_output",
+              "fieldValue": "={{ $json.validation }}"
+            },
+            {
+              "fieldId": "score",
+              "fieldValue": "={{ $json.validation.score }}"
+            },
+            {
+              "fieldId": "validado",
+              "fieldValue": "={{ $json.validation.validado }}"
+            },
+            {
+              "fieldId": "errores_criticos",
+              "fieldValue": "={{ $json.validation.errores_criticos }}"
+            },
+            {
+              "fieldId": "razones_fallo",
+              "fieldValue": "={{ $json.validation.razones_fallo }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.final_status }}"
+            },
+            {
+              "fieldId": "tokens_consumed",
+              "fieldValue": "={{ $json.tokens_total }}"
+            },
+            {
+              "fieldId": "models_used",
+              "fieldValue": "={{ $json.models }}"
+            },
+            {
+              "fieldId": "prompt_versions",
+              "fieldValue": "={{ ({generator_turn2: 'v1.0', validator_turn2: 'v1.0'}) }}"
+            },
+            {
+              "fieldId": "pipeline_duration_seconds",
+              "fieldValue": "={{ Math.round(($now.toMillis() - $('Pipeline start').item.json.pipeline_start_ms) / 1000) }}"
+            },
+            {
+              "fieldId": "turn_type",
+              "fieldValue": "turn2_generic"
+            },
+            {
+              "fieldId": "turn_number",
+              "fieldValue": "={{ $json._next_turn_number }}"
+            },
+            {
+              "fieldId": "previous_turn_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.previous_turn_id }}"
+            }
+          ]
+        },
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        992,
+        -160
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "sas-wf02b-001",
+      "name": "Should auto-send?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "sas-cond-1",
+              "leftValue": "={{ $('Compute final status').item.json.final_status }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "ready_to_send"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        1216,
+        -160
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "psa-wf02b-001",
+      "name": "Prepare send ctx A",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "pipeline_id",
+              "type": "string",
+              "value": "={{ $('Create row').item.json.id }}"
+            },
+            {
+              "id": "p2",
+              "name": "campaign_id",
+              "type": "string",
+              "value": "={{ $('When Executed by Another Workflow').item.json.body.campaign_id || $('Load previous turn').item.json.campaign_id || '' }}"
+            },
+            {
+              "id": "p3",
+              "name": "stats_id",
+              "type": "string",
+              "value": "={{ $('When Executed by Another Workflow').item.json.body.stats_id || $('Load previous turn').item.json.smartlead_thread_id || '' }}"
+            },
+            {
+              "id": "p4",
+              "name": "reply_message_id",
+              "type": "string",
+              "value": "={{ ($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.message_id) || $('When Executed by Another Workflow').item.json.body.message_id || '' }}"
+            },
+            {
+              "id": "p5",
+              "name": "reply_email_time",
+              "type": "string",
+              "value": "={{ $('When Executed by Another Workflow').item.json.body.time_replied || $('When Executed by Another Workflow').item.json.body.event_timestamp || new Date().toISOString() }}"
+            },
+            {
+              "id": "p6",
+              "name": "turn_2_text",
+              "type": "string",
+              "value": "={{ $('Parse AI outputs').item.json.generation.turn_2 }}"
+            },
+            {
+              "id": "p7",
+              "name": "ctx_source",
+              "type": "string",
+              "value": "trigger_a_inline_turn2"
+            },
+            {
+              "id": "p8_dry",
+              "name": "dry_run",
+              "type": "boolean",
+              "value": "={{ true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        1440,
+        -240
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "drm-wf02b-001",
+      "name": "Dry run mode?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "drm-cond-1",
+              "leftValue": "={{ $json.dry_run }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "boolean"
+              },
+              "rightValue": "={{ true }}"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        1664,
+        -240
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "mdr-wf02b-001",
+      "name": "Mark dry_run only",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "dry_run_only"
+            },
+            {
+              "fieldId": "sent_via",
+              "fieldValue": "dry_run"
+            },
+            {
+              "fieldId": "outcome_details",
+              "fieldValue": "={{ ({dry_run: true, would_have_sent_to: $json.stats_id, would_have_sent_text: $json.turn_2_text, ctx_source: $json.ctx_source, timestamp: $now.toISO()}) }}"
+            }
+          ]
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $json.pipeline_id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        1888,
+        -340
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "disabled": true,
+      "id": "ms-wf02b-001",
+      "name": "Mark sent",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "sent"
+            },
+            {
+              "fieldId": "sent_at",
+              "fieldValue": "={{ $now }}"
+            },
+            {
+              "fieldId": "sent_via",
+              "fieldValue": "smartlead_api"
+            }
+          ]
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $('Dry run mode?').item.json.pipeline_id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        1888,
+        -140
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "disabled": true,
+      "id": "mes-wf02b-001",
+      "name": "Mark error_send",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "error_send"
+            },
+            {
+              "fieldId": "outcome_details",
+              "fieldValue": "={{ ({error: 'Smartlead send failed (Turn 2)', timestamp: $now.toISO(), upstream_error: $json.error || $json}) }}"
+            }
+          ]
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $('Dry run mode?').item.json.pipeline_id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        1888,
+        60
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "wf02b-load-prompts",
+      "name": "Load active prompts",
+      "parameters": {
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "turn_type",
+              "keyValue": "turn2_generic"
+            },
+            {
+              "condition": "eq",
+              "keyName": "is_active",
+              "keyValue": true
+            }
+          ]
+        },
+        "limit": 10,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "returnAll": false,
+        "tableId": "cl001_p007_prompt_versions"
+      },
+      "position": [
+        -360,
+        -360
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "wf02b-index-prompts",
+      "name": "Index prompts",
+      "parameters": {
+        "jsCode": "// Index prompts segment-aware.\n// Lee el segmento del lead desde Load previous turn y elige la version\n// del prompt correspondiente al segmento. Si no hay version segment-specific,\n// fallback a MEGA. Si tampoco hay MEGA, deja la key vacia (Anthropic node fallara\n// con error claro).\n\nconst promptRows = $items().map(i => i.json);\nconst segmentRaw = ($('Load previous turn').first()?.json?.properties?.gtm__avatar_segment)\n                || ($('Load previous turn').first()?.json?.segmento)\n                || 'MEGA';\nconst segment = String(segmentRaw).trim() || 'MEGA';\n\nconst indexed = {};\nindexed._segment_used = segment;\nindexed._fallback_used = false;\n\n// Tipos relevantes para este turn_type\nconst PROMPT_TYPES = ['classifier', 'generator', 'validator'];\n\nfor (const ptype of PROMPT_TYPES) {\n  const specific = promptRows.find(r => r.prompt_type === ptype && r.segmento === segment && r.is_active === true && r.turn_type === 'turn2_generic');\n  const mega = promptRows.find(r => r.prompt_type === ptype && r.segmento === 'MEGA' && r.is_active === true && r.turn_type === 'turn2_generic');\n  const chosen = specific || mega;\n  if (chosen) {\n    indexed[ptype] = {\n      id: chosen.id,\n      version: chosen.version,\n      prompt_system: chosen.prompt_system,\n      model: chosen.model,\n      temperature: typeof chosen.temperature === 'number' ? chosen.temperature : 0,\n      max_tokens: chosen.max_tokens || 2048,\n      _used_segment: chosen.segmento,\n    };\n    if (!specific && mega) indexed._fallback_used = true;\n  }\n}\n\nreturn [{ json: indexed }];\n"
+      },
+      "position": [
+        -160,
+        -360
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "calc-next-turn",
+      "name": "Calc next turn_number",
+      "parameters": {
+        "jsCode": "// Calcula el próximo turn_number dinámicamente.\n// El WF[01] enruta CUALQUIER subsequent reply (2ª, 3ª, 4ª...) a este WF02b.\n// Lee el MAX(turn_number) actual del lead y devuelve +1, garantizando\n// unicidad bajo el constraint UNIQUE(smartlead_lead_id, turn_number).\n\nconst slLeadId = $('When Executed by Another Workflow').first().json.body.sl_email_lead_id;\n// n8n Code node NO expone URLSearchParams. Construimos el query string a mano\n// con encodeURIComponent para los valores.\nconst qs =\n  'smartlead_lead_id=eq.' + encodeURIComponent(slLeadId) +\n  '&select=turn_number' +\n  '&order=turn_number.desc.nullslast' +\n  '&limit=1';\nconst url = 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_turn1_pipeline?' + qs;\n\nlet nextTurn = 2; // fallback seguro\ntry {\n  const resp = await this.helpers.httpRequestWithAuthentication.call(\n    this, 'supabaseApi',\n    { method: 'GET', url: url, json: true }\n  );\n  if (Array.isArray(resp) && resp.length > 0) {\n    const maxTurn = Number(resp[0].turn_number) || 1;\n    nextTurn = maxTurn + 1;\n  }\n} catch (e) {\n  // fallback nextTurn=2 si falla\n}\nconst passthrough = $input.first().json;\nreturn [{ json: Object.assign({}, passthrough, { _next_turn_number: nextTurn }) }];\n"
+      },
+      "position": [
+        1408,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    }
+  ],
+  "settings": {
+    "binaryMode": "separate",
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

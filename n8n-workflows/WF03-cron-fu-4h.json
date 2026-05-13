@@ -1,0 +1,248 @@
+{
+  "active": true,
+  "connections": {
+    "Compute cutoff": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Find pending FU 4h",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Every 30 min": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Compute cutoff",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Find pending FU 4h": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Guard: skip if engaged",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Guard: skip if engaged": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark fu_4h dispatching",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Mark fu_4h dispatching": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Call WF02c FU 4h Generator",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "5HQJUXNtkUOpuiNb",
+  "name": "GTM - 001 - WF03 - Cron FU 4h Detector",
+  "nodes": [
+    {
+      "id": "trg-cron-fu4h-001",
+      "name": "Every 30 min",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "position": [
+        -560,
+        -160
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2
+    },
+    {
+      "id": "cutoff-fu4h-001",
+      "name": "Compute cutoff",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cutoff001",
+              "name": "cutoff_iso",
+              "type": "string",
+              "value": "={{ $now.minus({hours:4}).toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        -336,
+        -160
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "find-pending-fu4h-001",
+      "name": "Find pending FU 4h",
+      "parameters": {
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "turn_type",
+              "keyValue": "turn1"
+            },
+            {
+              "condition": "eq",
+              "keyName": "status",
+              "keyValue": "sent"
+            },
+            {
+              "condition": "lt",
+              "keyName": "created_at",
+              "keyValue": "={{ $('Compute cutoff').item.json.cutoff_iso }}"
+            },
+            {
+              "condition": "is",
+              "keyName": "fu_4h_sent_at",
+              "keyValue": "null"
+            }
+          ]
+        },
+        "limit": 50,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "returnAll": false,
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        -128,
+        -160
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "mark-dispatch-fu4h-001",
+      "name": "Mark fu_4h dispatching",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "fu_4h_sent_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "matchType": "allFilters",
+        "operation": "update",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        96,
+        -160
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "exec-wf02c-001",
+      "name": "Call WF02c FU 4h Generator",
+      "parameters": {
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": false
+        },
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "itTEMVdRX3QDjcyQ"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "matchingColumns": [],
+          "schema": [
+            {
+              "displayName": "body",
+              "id": "body",
+              "type": "object"
+            }
+          ],
+          "value": {
+            "body": "={{ ({previous_turn_id: $('Find pending FU 4h').item.json.id, setter_name: 'Laura'}) }}"
+          }
+        }
+      },
+      "position": [
+        320,
+        -160
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2
+    },
+    {
+      "id": "guard-fu4h-engaged",
+      "name": "Guard: skip if engaged",
+      "parameters": {
+        "jsCode": "// Guard FU 4h: para cada caso pending, descartar si:\n//   1. Existe Turn 2+ en pipeline para ese smartlead_lead_id (lead ya\n//      respondio Y nosotros ya generamos algo despues)\n//   2. Lead tiene reunion programada en HubSpot (futura o ultimos 7 dias)\n//\n// Tolerante a errores de API (HubSpot fail-open: si no podemos verificar,\n// dejamos pasar el FU. Es preferible un FU innecesario a no enviar nunca).\n\nconst pendingItems = $input.all();\nif (pendingItems.length === 0) return [];\n\nconst slLeadIds = [...new Set(pendingItems.map(i => i.json.smartlead_lead_id).filter(Boolean))];\n\n// 1. Bulk lookup en Supabase: turn2+ rows para estos lead ids\nlet leadsWithTurn2 = new Set();\ntry {\n  const subProjUrl = 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_turn1_pipeline';\n  const params = new URLSearchParams({\n    select: 'smartlead_lead_id,turn_number',\n    smartlead_lead_id: 'in.(' + slLeadIds.map(id => '\"' + id + '\"').join(',') + ')',\n    turn_number: 'gt.1',\n    limit: '500',\n  });\n  const resp = await this.helpers.httpRequestWithAuthentication.call(\n    this, 'supabaseApi',\n    { method: 'GET', url: subProjUrl + '?' + params.toString(), json: true }\n  );\n  const rows = Array.isArray(resp) ? resp : [];\n  rows.forEach(r => leadsWithTurn2.add(String(r.smartlead_lead_id)));\n} catch (e) {\n  // Si Supabase falla, fail-closed (no envies — no sabemos)\n  return [{ json: { _wf03_aborted: true, reason: 'supabase lookup failed: ' + (e.message || e) } }];\n}\n\n// 2. Para cada item: chequear HubSpot meetings (futuras o recientes)\nconst out = [];\nfor (const item of pendingItems) {\n  const row = item.json;\n  const slId = String(row.smartlead_lead_id);\n  const hsContactId = row.hubspot_contact_id;\n\n  if (leadsWithTurn2.has(slId)) {\n    // Ya hay un Turn 2+ — saltar\n    continue;\n  }\n\n  let hasMeeting = false;\n  if (hsContactId) {\n    try {\n      const meetings = await this.helpers.httpRequestWithAuthentication.call(\n        this, 'hubspotAppToken',\n        {\n          method: 'GET',\n          url: 'https://api.hubapi.com/crm/v3/objects/contacts/' + encodeURIComponent(hsContactId) + '/associations/meetings',\n          json: true,\n        }\n      );\n      const meetingIds = (meetings.results || []).map(r => r.id).slice(0, 20);\n      if (meetingIds.length > 0) {\n        const batch = await this.helpers.httpRequestWithAuthentication.call(\n          this, 'hubspotAppToken',\n          {\n            method: 'POST',\n            url: 'https://api.hubapi.com/crm/v3/objects/meetings/batch/read',\n            body: {\n              properties: ['hs_meeting_start_time', 'hs_meeting_outcome'],\n              inputs: meetingIds.map(id => ({ id })),\n            },\n            json: true,\n          }\n        );\n        const now = Date.now();\n        const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);\n        hasMeeting = (batch.results || []).some(m => {\n          const t = m.properties && m.properties.hs_meeting_start_time\n            ? Date.parse(m.properties.hs_meeting_start_time) : 0;\n          // Reunion futura O en los ultimos 7 dias\n          return t > now || (t >= sevenDaysAgo && t <= now);\n        });\n      }\n    } catch (e) {\n      // Fail-open: si HubSpot falla, no skipear (mejor un FU innecesario que perdido)\n    }\n  }\n\n  if (hasMeeting) continue;\n  out.push({ json: row });\n}\n\nreturn out;\n"
+      },
+      "position": [
+        40,
+        -160
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
