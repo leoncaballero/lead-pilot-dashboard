@@ -19,6 +19,7 @@ import {
   Bot,
   Search,
   HeartPulse,
+  Filter,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ const insightsItems = [
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Auto-send Monitor", url: "/auto-send-monitor", icon: Bot },
   { title: "Prompt Performance", url: "/prompt-performance", icon: Trophy },
+  { title: "Leads filtrados", url: "/leads-filtrados", icon: Filter },
   { title: "Activity", url: "/activity", icon: Activity },
 ];
 
