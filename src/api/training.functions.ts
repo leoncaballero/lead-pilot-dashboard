@@ -529,6 +529,16 @@ Tienes acceso a estas tools para consultar el historial real del pipeline de Le�
 
 2. **get_case_full_context** — Para hacer "zoom in" en un caso concreto. Devuelve el contexto rico de HubSpot (lifecycle, empresa, última reunión, llamadas recientes) y el hilo completo de Smartlead.
 
+3. **get_edit_reasons_summary** — Devuelve el ranking de razones que los humanos han marcado en /triage y /auto-send-monitor cuando editaron o rechazaron tus propuestas (por ej. "Halago disfrazado", "Jerga consultor", "Saludo incorrecto"), filtrado por el segmento+turn_type de la sesión. Incluye muestras concretas de original→editado para que veas qué cambian los SDRs.
+
+   **ÚSALA AL INICIO** de la sesión, antes de proponer cambios al prompt — es la mejor señal cuantitativa de qué falla. Patrón ideal:
+   1. Llama get_edit_reasons_summary
+   2. Mira las top 3 razones (n=20+ idealmente)
+   3. Para cada una, mira 2-3 sample_edits → entiende EN QUÉ se materializa esa razón
+   4. Propón cambios al prompt para eliminar esos patrones
+
+   Si la razón #1 tiene n<5, dile a León "hay poca evidencia, conviene editar más casos antes de iterar" en vez de proponer cambios sobre nada.
+
 León típicamente te pedirá algo como "mándame 10 casos reales MEGA Turn 1" — llama a get_recent_cases con los filtros adecuados (segmento=MEGA, turn_type=turn1, only_with_response=true por defecto). Presenta los casos numerados, con la info esencial: lead, segmento+patrón+score, reply del lead, propuesta IA. Luego espera su input por cada caso.
 
 Por defecto los filtros: usa los de la sesión (prompt_type, segmento, turn_type) salvo que León pida otra cosa.
@@ -624,6 +634,33 @@ const COACH_TOOLS = [
       required: ["case_id"],
     },
   },
+  {
+    name: "get_edit_reasons_summary",
+    description:
+      "Devuelve qué razones de edit/reject han marcado los humanos en /triage y /auto-send-monitor para el segmento+turn_type de la sesión. Útil para detectar patrones repetidos (ej: 'Halago disfrazado' aparece en 18/25 ediciones → hay que endurecer la regla de tono en el prompt). Combina: 1) ranking de razones más comunes, 2) muestras concretas de original→editado con las razones marcadas. Usa esta tool al inicio de una sesión de iteración para tener evidencia cuantitativa de qué falla, en vez de inventar hipótesis.",
+    input_schema: {
+      type: "object",
+      properties: {
+        lookback_days: {
+          type: "integer",
+          description: "Ventana de días a analizar. Default 30.",
+          minimum: 1,
+          maximum: 180,
+        },
+        sample_size: {
+          type: "integer",
+          description: "Cuántos ejemplos concretos de original→editado traer (1-15). Default 8.",
+          minimum: 1,
+          maximum: 15,
+        },
+        include_rejects: {
+          type: "boolean",
+          description:
+            "Si true, incluye también razones de los rechazos (reason='reject: ...') además de ediciones. Default true.",
+        },
+      },
+    },
+  },
 ];
 
 async function executeCoachTool(
@@ -633,6 +670,8 @@ async function executeCoachTool(
 ): Promise<unknown> {
   if (name === "get_recent_cases") return toolGetRecentCases(input, session);
   if (name === "get_case_full_context") return toolGetCaseFullContext(input);
+  if (name === "get_edit_reasons_summary")
+    return toolGetEditReasonsSummary(input, session);
   return { error: `Tool desconocida: ${name}` };
 }
 
@@ -832,6 +871,143 @@ async function toolGetCaseFullContext(
     hubspot,
     smartlead_thread: smartleadThread,
     errors: errors.length > 0 ? errors : undefined,
+  };
+}
+
+async function toolGetEditReasonsSummary(
+  input: Record<string, unknown>,
+  session: TrainingSession
+): Promise<{
+  segmento: string;
+  turn_type: string;
+  window_days: number;
+  totals: { edits: number; rejects: number };
+  top_reasons: Array<{ reason: string; count: number; in_edits: number; in_rejects: number }>;
+  sample_edits: Array<{
+    case_id: string;
+    sdr_action: string;
+    reasons: string[];
+    original_truncated: string;
+    edited_truncated: string;
+  }>;
+  sample_rejects: Array<{ case_id: string; reasons: string[]; original_truncated: string }>;
+  note?: string;
+}> {
+  const segmento = session.segmento;
+  const turnType = session.turn_type;
+  const lookbackDays = Math.min(
+    Math.max(Number(input.lookback_days ?? 30), 1),
+    180
+  );
+  const sampleSize = Math.min(Math.max(Number(input.sample_size ?? 8), 1), 15);
+  const includeRejects = input.include_rejects !== false; // default true
+  const since = new Date(Date.now() - lookbackDays * 24 * 3600 * 1000).toISOString();
+
+  const PIPELINE_TABLE = "cl001_p007_turn1_pipeline";
+  const EDIT_REASONS_TABLE = "cl001_p007_edit_reasons";
+
+  // 1. Cases con sdr_action de interés en la ventana
+  const actions = includeRejects
+    ? `(edited_and_sent,edited_via_quick_gate,rejected)`
+    : `(edited_and_sent,edited_via_quick_gate)`;
+  const editsParams = new URLSearchParams({
+    select:
+      "id,sdr_action,turn_1_generated,turn_1_final,reply_original,sdr_action_timestamp",
+    segmento: `eq.${segmento}`,
+    turn_type: `eq.${turnType}`,
+    sdr_action: `in.${actions}`,
+    order: "sdr_action_timestamp.desc.nullslast",
+    limit: "200",
+  });
+  editsParams.append("sdr_action_timestamp", `gte.${since}`);
+  const editCases = ((await pgrest(`${PIPELINE_TABLE}?${editsParams.toString()}`, {
+    method: "GET",
+  })) ?? []) as Array<{
+    id: string;
+    sdr_action: string;
+    turn_1_generated: string | null;
+    turn_1_final: string | null;
+    reply_original: string | null;
+    sdr_action_timestamp: string | null;
+  }>;
+
+  const editsList = editCases.filter((c) => c.sdr_action !== "rejected");
+  const rejectsList = editCases.filter((c) => c.sdr_action === "rejected");
+
+  // 2. Razones asociadas a esos pipeline_ids
+  type ReasonRow = { pipeline_id: string; reason: string; created_at: string | null };
+  let reasonRows: ReasonRow[] = [];
+  if (editCases.length > 0) {
+    const ids = editCases.map((c) => `"${c.id}"`).join(",");
+    reasonRows = ((await pgrest(
+      `${EDIT_REASONS_TABLE}?select=pipeline_id,reason,created_at&pipeline_id=in.(${ids})&limit=2000`,
+      { method: "GET" }
+    )) ?? []) as ReasonRow[];
+  }
+
+  // Mapear pipeline_id → set de razones (preservando el "reject:" prefix para
+  // que el coach pueda distinguir contexto)
+  const reasonsByCase = new Map<string, string[]>();
+  for (const r of reasonRows) {
+    const arr = reasonsByCase.get(r.pipeline_id) ?? [];
+    arr.push(r.reason);
+    reasonsByCase.set(r.pipeline_id, arr);
+  }
+
+  // 3. Aggregar contadores
+  const editIds = new Set(editsList.map((e) => e.id));
+  const rejectIds = new Set(rejectsList.map((r) => r.id));
+  const counts = new Map<string, { count: number; in_edits: number; in_rejects: number }>();
+  for (const r of reasonRows) {
+    // Normalizar: quitamos prefix "reject: " para agrupar la misma razón en ambos casos
+    const isRejectPrefixed = r.reason.startsWith("reject:");
+    const normalized = isRejectPrefixed ? r.reason.replace(/^reject:\s*/, "") : r.reason;
+    const entry = counts.get(normalized) ?? { count: 0, in_edits: 0, in_rejects: 0 };
+    entry.count += 1;
+    if (editIds.has(r.pipeline_id)) entry.in_edits += 1;
+    else if (rejectIds.has(r.pipeline_id)) entry.in_rejects += 1;
+    counts.set(normalized, entry);
+  }
+  const topReasons = Array.from(counts.entries())
+    .map(([reason, v]) => ({ reason, ...v }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  // 4. Samples concretos
+  const sampleEdits = editsList
+    .filter((c) => c.turn_1_generated && c.turn_1_final && (reasonsByCase.get(c.id)?.length ?? 0) > 0)
+    .slice(0, sampleSize)
+    .map((c) => ({
+      case_id: c.id,
+      sdr_action: c.sdr_action,
+      reasons: reasonsByCase.get(c.id) ?? [],
+      original_truncated: truncate(c.turn_1_generated ?? "", 700),
+      edited_truncated: truncate(c.turn_1_final ?? "", 700),
+    }));
+
+  const sampleRejects = rejectsList
+    .filter((c) => (reasonsByCase.get(c.id)?.length ?? 0) > 0)
+    .slice(0, Math.min(5, sampleSize))
+    .map((c) => ({
+      case_id: c.id,
+      reasons: (reasonsByCase.get(c.id) ?? []).map((r) => r.replace(/^reject:\s*/, "")),
+      original_truncated: truncate(c.turn_1_generated ?? c.reply_original ?? "", 600),
+    }));
+
+  const note =
+    editCases.length === 0
+      ? `Sin ediciones ni rechazos para ${segmento}/${turnType} en los últimos ${lookbackDays}d. Prueba a ampliar la ventana o pide casos con get_recent_cases.`
+      : undefined;
+
+  return {
+    segmento,
+    turn_type: turnType,
+    window_days: lookbackDays,
+    totals: { edits: editsList.length, rejects: rejectsList.length },
+    top_reasons: topReasons,
+    sample_edits: sampleEdits,
+    sample_rejects: sampleRejects,
+    note,
   };
 }
 
