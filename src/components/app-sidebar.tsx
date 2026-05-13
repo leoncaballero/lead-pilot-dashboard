@@ -20,6 +20,7 @@ import {
   Search,
   HeartPulse,
   Filter,
+  Globe,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +57,7 @@ const systemItems = [
   { title: "Prompts", url: "/prompts", icon: FileText },
   { title: "AI Coach", url: "/training", icon: GraduationCap },
   { title: "Estrategias", url: "/strategies", icon: Workflow },
+  { title: "Análisis web", url: "/lead-website-analysis", icon: Globe },
   { title: "System Health", url: "/system-health", icon: HeartPulse },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
