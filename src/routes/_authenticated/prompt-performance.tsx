@@ -70,6 +70,7 @@ type FlatRow = {
 type SortKey =
   | "version"
   | "generated_count"
+  | "sent_count"
   | "replied_count"
   | "reply_rate"
   | "booked_count"
@@ -137,16 +138,18 @@ function PerfPage() {
 
   const totals = useMemo(() => {
     let generated = 0;
+    let sent = 0;
     let replied = 0;
     let booked = 0;
     let won = 0;
     for (const r of filtered) {
       generated += r.stats.generated_count;
+      sent += r.stats.sent_count;
       replied += r.stats.replied_count;
       booked += r.stats.booked_count;
       won += r.stats.closed_won_count;
     }
-    return { generated, replied, booked, won };
+    return { generated, sent, replied, booked, won };
   }, [filtered]);
 
   function toggleSort(k: SortKey) {
@@ -162,20 +165,31 @@ function PerfPage() {
       <div>
         <h1 className="text-2xl font-semibold">Prompt Performance</h1>
         <p className="text-sm text-muted-foreground">
-          Comparativa por versión: leads ingresados, replies, bookings y ventas. Atribución por
-          ventana temporal entre creaciones de versión. Refresca cada 60s.
+          Comparativa por versión: leads ingresados, enviados, replies, bookings y ventas.
+          Reply % y booking % se calculan sobre <strong>enviados</strong> (no sobre leads), que
+          es la métrica real de efectividad del prompt. Atribución por ventana temporal entre
+          creaciones de versión. Refresca cada 60s.
         </p>
       </div>
 
       {/* Totales del filtro actual */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <KpiCard label="Leads atribuidos" value={totals.generated.toString()} />
+        <KpiCard
+          label="Enviados"
+          value={totals.sent.toString()}
+          sub={
+            totals.generated > 0
+              ? `${pct(totals.sent / totals.generated)} sobre leads`
+              : "—"
+          }
+        />
         <KpiCard
           label="Replies"
           value={totals.replied.toString()}
           sub={
-            totals.generated > 0
-              ? `${pct(totals.replied / totals.generated)} reply rate`
+            totals.sent > 0
+              ? `${pct(totals.replied / totals.sent)} reply rate (sobre env)`
               : "—"
           }
           tone="blue"
@@ -184,8 +198,8 @@ function PerfPage() {
           label="Bookings"
           value={totals.booked.toString()}
           sub={
-            totals.generated > 0
-              ? `${pct(totals.booked / totals.generated)} booking rate`
+            totals.sent > 0
+              ? `${pct(totals.booked / totals.sent)} booking rate (sobre env)`
               : "—"
           }
           tone="amber"
@@ -194,7 +208,7 @@ function PerfPage() {
           label="Ventas (closed_won)"
           value={totals.won.toString()}
           sub={
-            totals.generated > 0 ? `${pct(totals.won / totals.generated)} win rate` : "—"
+            totals.generated > 0 ? `${pct(totals.won / totals.generated)} win rate (sobre leads)` : "—"
           }
           tone="green"
         />
@@ -277,6 +291,14 @@ function PerfPage() {
               </Th>
               <Th
                 align="right"
+                onSort={() => toggleSort("sent_count")}
+                active={sortKey === "sent_count"}
+                dir={sortDir}
+              >
+                Enviados
+              </Th>
+              <Th
+                align="right"
                 onSort={() => toggleSort("replied_count")}
                 active={sortKey === "replied_count"}
                 dir={sortDir}
@@ -289,7 +311,7 @@ function PerfPage() {
                 active={sortKey === "reply_rate"}
                 dir={sortDir}
               >
-                Reply %
+                Reply % (/ env)
               </Th>
               <Th
                 align="right"
@@ -305,7 +327,7 @@ function PerfPage() {
                 active={sortKey === "booking_rate"}
                 dir={sortDir}
               >
-                Booking %
+                Booking % (/ env)
               </Th>
               <Th
                 align="right"
@@ -336,7 +358,7 @@ function PerfPage() {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-8 text-muted-foreground">
+                <td colSpan={11} className="text-center py-8 text-muted-foreground">
                   Sin resultados con estos filtros.
                 </td>
               </tr>
@@ -362,14 +384,16 @@ function sortValue(r: FlatRow, k: SortKey): number | string {
       return r.stats.version;
     case "generated_count":
       return r.stats.generated_count;
+    case "sent_count":
+      return r.stats.sent_count;
     case "replied_count":
       return r.stats.replied_count;
     case "reply_rate":
-      return r.stats.reply_rate;
+      return r.stats.reply_rate_over_sent;
     case "booked_count":
       return r.stats.booked_count;
     case "booking_rate":
-      return r.stats.booking_rate;
+      return r.stats.booking_rate_over_sent;
     case "closed_won_count":
       return r.stats.closed_won_count;
     case "win_rate":
@@ -413,13 +437,14 @@ function Row({ r }: { r: FlatRow }) {
         </div>
       </td>
       <td className="px-3 py-2 text-right tabular-nums">{s.generated_count || "—"}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{s.sent_count || "—"}</td>
       <td className="px-3 py-2 text-right tabular-nums">{s.replied_count || "—"}</td>
       <td className="px-3 py-2 text-right tabular-nums">
-        <RateChip rate={s.reply_rate} count={s.generated_count} tone="blue" />
+        <RateChip rate={s.reply_rate_over_sent} count={s.sent_count} tone="blue" />
       </td>
       <td className="px-3 py-2 text-right tabular-nums">{s.booked_count || "—"}</td>
       <td className="px-3 py-2 text-right tabular-nums">
-        <RateChip rate={s.booking_rate} count={s.generated_count} tone="amber" />
+        <RateChip rate={s.booking_rate_over_sent} count={s.sent_count} tone="amber" />
       </td>
       <td className="px-3 py-2 text-right tabular-nums">{s.closed_won_count || "—"}</td>
       <td className="px-3 py-2 text-right tabular-nums">
