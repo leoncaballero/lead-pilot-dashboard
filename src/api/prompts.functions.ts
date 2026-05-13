@@ -1019,6 +1019,8 @@ export type PromptVersionStats = {
   created_at: string | null;
   /** Pipeline rows atribuidos a esta versión */
   generated_count: number;
+  /** De los atribuidos, cuántos se enviaron realmente (status='sent' o sent_at != null) */
+  sent_count: number;
   /** De los atribuidos, cuántos replied */
   replied_count: number;
   /** De los atribuidos, cuántos booked */
@@ -1027,9 +1029,14 @@ export type PromptVersionStats = {
   closed_won_count: number;
   /** Cerrado LOST */
   closed_lost_count: number;
+  /** Tasas sobre generated (sobre leads ingresados — atribución base) */
   reply_rate: number;
   booking_rate: number;
   win_rate: number;
+  /** Tasas sobre sent (sobre lo realmente enviado — más representativo de la
+   *  efectividad real del prompt cuando hay errores de envío o rejects manuales) */
+  reply_rate_over_sent: number;
+  booking_rate_over_sent: number;
 };
 
 export const getPromptStats = createServerFn({ method: "GET" })
@@ -1074,21 +1081,30 @@ export const getPromptStats = createServerFn({ method: "GET" })
     const versionIds = versions.map((v) => v.id);
     const idsList = versionIds.map((i) => `"${i}"`).join(",");
     const exactParams = new URLSearchParams({
-      select: "id,created_at,generator_version_id",
+      select: "id,created_at,generator_version_id,sent_at,status",
       order: "created_at.asc",
       limit: "10000",
     });
     exactParams.append("generator_version_id", `in.(${idsList})`);
-    type PRowExact = { id: string; created_at: string; generator_version_id: string };
+    type PRowExact = {
+      id: string;
+      created_at: string;
+      generator_version_id: string;
+      sent_at: string | null;
+      status: string | null;
+    };
     const exactRows = ((await pgrest(`${PIPELINE_TABLE}?${exactParams.toString()}`, {
       method: "GET",
     })) ?? []) as PRowExact[];
 
     // Group by version id
-    const rowsByVersion = new Map<string, Array<{ id: string; created_at: string }>>();
+    const rowsByVersion = new Map<
+      string,
+      Array<{ id: string; created_at: string; sent_at: string | null; status: string | null }>
+    >();
     for (const r of exactRows) {
       const arr = rowsByVersion.get(r.generator_version_id) ?? [];
-      arr.push({ id: r.id, created_at: r.created_at });
+      arr.push({ id: r.id, created_at: r.created_at, sent_at: r.sent_at, status: r.status });
       rowsByVersion.set(r.generator_version_id, arr);
     }
 
@@ -1100,7 +1116,7 @@ export const getPromptStats = createServerFn({ method: "GET" })
       const pParams = new URLSearchParams({
         segmento: `eq.${data.segmento}`,
         turn_type: `eq.${data.turn_type}`,
-        select: "id,created_at,generator_version_id",
+        select: "id,created_at,generator_version_id,sent_at,status",
         order: "created_at.asc",
         limit: "5000",
       });
@@ -1131,16 +1147,18 @@ export const getPromptStats = createServerFn({ method: "GET" })
 
 function computeStatsExact(
   v: { id: string; version: string; is_active: boolean; created_at: string | null },
-  rows: Array<{ id: string; created_at: string }>,
+  rows: Array<{ id: string; created_at: string; sent_at?: string | null; status?: string | null }>,
   outcomes: OutcomeSets
 ): PromptVersionStats {
   let generated = 0;
+  let sent = 0;
   let replied = 0;
   let booked = 0;
   let won = 0;
   let lost = 0;
   for (const r of rows) {
     generated++;
+    if (r.sent_at || r.status === "sent") sent++;
     if (outcomes.replied.has(r.id)) replied++;
     if (outcomes.booked.has(r.id)) booked++;
     if (outcomes.closed_won.has(r.id)) won++;
@@ -1152,6 +1170,7 @@ function computeStatsExact(
     is_active: v.is_active,
     created_at: v.created_at,
     generated_count: generated,
+    sent_count: sent,
     replied_count: replied,
     booked_count: booked,
     closed_won_count: won,
@@ -1159,6 +1178,8 @@ function computeStatsExact(
     reply_rate: generated > 0 ? replied / generated : 0,
     booking_rate: generated > 0 ? booked / generated : 0,
     win_rate: generated > 0 ? won / generated : 0,
+    reply_rate_over_sent: sent > 0 ? replied / sent : 0,
+    booking_rate_over_sent: sent > 0 ? booked / sent : 0,
   };
 }
 
@@ -1231,20 +1252,29 @@ export const getABComparison = createServerFn({ method: "GET" })
     // Stats exactos por version_id
     const idsList = versions.map((v) => `"${v.id}"`).join(",");
     const pParams = new URLSearchParams({
-      select: "id,created_at,generator_version_id",
+      select: "id,created_at,generator_version_id,sent_at,status",
       order: "created_at.asc",
       limit: "10000",
     });
     pParams.append("generator_version_id", `in.(${idsList})`);
-    type PRow = { id: string; created_at: string; generator_version_id: string };
+    type PRow = {
+      id: string;
+      created_at: string;
+      generator_version_id: string;
+      sent_at: string | null;
+      status: string | null;
+    };
     const rows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
       method: "GET",
     })) ?? []) as PRow[];
 
-    const rowsByVersion = new Map<string, Array<{ id: string; created_at: string }>>();
+    const rowsByVersion = new Map<
+      string,
+      Array<{ id: string; created_at: string; sent_at: string | null; status: string | null }>
+    >();
     for (const r of rows) {
       const arr = rowsByVersion.get(r.generator_version_id) ?? [];
-      arr.push({ id: r.id, created_at: r.created_at });
+      arr.push({ id: r.id, created_at: r.created_at, sent_at: r.sent_at, status: r.status });
       rowsByVersion.set(r.generator_version_id, arr);
     }
     const outcomes = await fetchOutcomeSetsForPipelines(rows.map((r) => r.id));
@@ -1334,7 +1364,7 @@ function computeStatsForVersion(
   v: { id: string; version: string; is_active: boolean; created_at: string | null },
   index: number,
   allVersions: Array<{ created_at: string | null }>,
-  pipelineRows: Array<{ id: string; created_at: string }>,
+  pipelineRows: Array<{ id: string; created_at: string; sent_at?: string | null; status?: string | null }>,
   outcomes: OutcomeSets
 ): PromptVersionStats {
   const start = v.created_at ? Date.parse(v.created_at) : 0;
@@ -1343,6 +1373,7 @@ function computeStatsForVersion(
       ? Date.parse(allVersions[index + 1].created_at!)
       : Number.POSITIVE_INFINITY;
   let generated = 0;
+  let sent = 0;
   let replied = 0;
   let booked = 0;
   let won = 0;
@@ -1351,6 +1382,7 @@ function computeStatsForVersion(
     const t = r.created_at ? Date.parse(r.created_at) : 0;
     if (t < start || t >= end) continue;
     generated++;
+    if (r.sent_at || r.status === "sent") sent++;
     if (outcomes.replied.has(r.id)) replied++;
     if (outcomes.booked.has(r.id)) booked++;
     if (outcomes.closed_won.has(r.id)) won++;
@@ -1362,6 +1394,7 @@ function computeStatsForVersion(
     is_active: v.is_active,
     created_at: v.created_at,
     generated_count: generated,
+    sent_count: sent,
     replied_count: replied,
     booked_count: booked,
     closed_won_count: won,
@@ -1369,6 +1402,8 @@ function computeStatsForVersion(
     reply_rate: generated > 0 ? replied / generated : 0,
     booking_rate: generated > 0 ? booked / generated : 0,
     win_rate: generated > 0 ? won / generated : 0,
+    reply_rate_over_sent: sent > 0 ? replied / sent : 0,
+    booking_rate_over_sent: sent > 0 ? booked / sent : 0,
   };
 }
 
@@ -1426,7 +1461,7 @@ export const listAllPromptStats = createServerFn({ method: "GET" }).handler(
       Array.from(earliestByCombo.values()).sort()[0] ?? new Date(0).toISOString();
 
     const pParams = new URLSearchParams({
-      select: "id,created_at,segmento,turn_type",
+      select: "id,created_at,segmento,turn_type,sent_at,status",
       order: "created_at.asc",
       limit: "10000",
     });
@@ -1436,18 +1471,28 @@ export const listAllPromptStats = createServerFn({ method: "GET" }).handler(
       created_at: string;
       segmento: string;
       turn_type: string;
+      sent_at: string | null;
+      status: string | null;
     };
     const allPipelineRows = ((await pgrest(`${PIPELINE_TABLE}?${pParams.toString()}`, {
       method: "GET",
     })) ?? []) as PRow[];
 
     // 4. Filter pipeline rows a los pares relevantes y agrupar
-    const pipelineByCombo = new Map<string, Array<{ id: string; created_at: string }>>();
+    const pipelineByCombo = new Map<
+      string,
+      Array<{ id: string; created_at: string; sent_at: string | null; status: string | null }>
+    >();
     for (const r of allPipelineRows) {
       const key = `${r.segmento}|${r.turn_type}`;
       if (!segTurnPairs.has(key)) continue;
       if (!pipelineByCombo.has(key)) pipelineByCombo.set(key, []);
-      pipelineByCombo.get(key)!.push({ id: r.id, created_at: r.created_at });
+      pipelineByCombo.get(key)!.push({
+        id: r.id,
+        created_at: r.created_at,
+        sent_at: r.sent_at,
+        status: r.status,
+      });
     }
 
     // 5. Outcomes una sola vez, para todos los pipeline_ids relevantes
