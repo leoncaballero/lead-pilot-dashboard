@@ -7,6 +7,7 @@ export type HistoryCase = {
   id: string;
   smartlead_lead_id?: string | null;
   smartlead_thread_id?: string | null;
+  campaign_id?: string | null;
   hubspot_contact_id?: string | null;
   lead_name?: string | null;
   lead_email?: string | null;
@@ -86,7 +87,7 @@ export const getHistoryCases = createServerFn({ method: "GET" })
     const params = new URLSearchParams();
     params.set(
       "select",
-      "id,smartlead_lead_id,smartlead_thread_id,hubspot_contact_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,turn_1_final,score,validado,status,sdr_action,sdr_action_timestamp,edit_reason,sent_at,sent_via,outcome,outcome_timestamp,outcome_details,errores_criticos,razones_fallo,created_at,updated_at"
+      "id,smartlead_lead_id,smartlead_thread_id,campaign_id,hubspot_contact_id,lead_name,lead_email,reply_original,reply_timestamp,segmento,patron,turn_1_generated,turn_1_final,score,validado,status,sdr_action,sdr_action_timestamp,edit_reason,sent_at,sent_via,outcome,outcome_timestamp,outcome_details,errores_criticos,razones_fallo,created_at,updated_at"
     );
     params.set("order", "created_at.desc");
     params.set("limit", String(limit));

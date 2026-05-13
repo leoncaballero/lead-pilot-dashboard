@@ -293,6 +293,7 @@ function PipelinePage() {
                   </div>
                   <ConversationThread
                     smartleadLeadId={selected.smartlead_lead_id}
+                    campaignId={selected.campaign_id}
                     defaultCompact
                   />
                 </div>

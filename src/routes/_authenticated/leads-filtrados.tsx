@@ -249,7 +249,11 @@ function FilteredLeadRowItem({
       </button>
 
       {expanded && (
-        <ExpandedThread leadId={r.lead_id} leadMapId={r.lead_map_id} />
+        <ExpandedThread
+          leadId={r.lead_id}
+          campaignId={r.campaign_id}
+          leadMapId={r.lead_map_id}
+        />
       )}
     </div>
   );
@@ -257,9 +261,11 @@ function FilteredLeadRowItem({
 
 function ExpandedThread({
   leadId,
+  campaignId,
   leadMapId,
 }: {
   leadId: number | null;
+  campaignId: number | null;
   leadMapId: number;
 }) {
   if (leadId == null) {
@@ -271,7 +277,11 @@ function ExpandedThread({
   }
   return (
     <div className="mt-2 space-y-2">
-      <ConversationThread smartleadLeadId={leadId} defaultCompact={false} />
+      <ConversationThread
+        smartleadLeadId={leadId}
+        campaignId={campaignId}
+        defaultCompact={false}
+      />
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         <span>
           smartlead_lead_id: <code>{leadId}</code> · lead_map_id: <code>{leadMapId}</code>

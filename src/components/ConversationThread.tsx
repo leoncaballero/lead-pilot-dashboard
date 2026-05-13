@@ -37,11 +37,15 @@ export type ThreadSnapshotMessage = {
  */
 export function ConversationThread({
   smartleadLeadId,
+  campaignId,
   snapshot,
   leadEmail,
   defaultCompact = false,
 }: {
   smartleadLeadId: string | number | null | undefined;
+  /** campaign_id guardado en el pipeline row. Si lo pasamos, evitamos la
+   *  ambigüedad cuando el lead está en varias campañas Smartlead. */
+  campaignId?: string | number | null;
   snapshot?: ThreadSnapshotMessage[] | null;
   leadEmail?: string | null;
   defaultCompact?: boolean;
@@ -93,7 +97,7 @@ export function ConversationThread({
     }
     let cancelled = false;
     setLoading(true);
-    fetchFn({ data: { smartlead_lead_id: smartleadLeadId } })
+    fetchFn({ data: { smartlead_lead_id: smartleadLeadId, campaign_id: campaignId ?? null } })
       .then((res) => {
         if (!cancelled) setThread(res);
       })
@@ -115,7 +119,7 @@ export function ConversationThread({
     return () => {
       cancelled = true;
     };
-  }, [smartleadLeadId, fetchFn, hasSnapshot, snapshot, leadEmail]);
+  }, [smartleadLeadId, campaignId, fetchFn, hasSnapshot, snapshot, leadEmail]);
 
   if (!smartleadLeadId && !hasSnapshot) {
     return (
