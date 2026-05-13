@@ -1,0 +1,1141 @@
+{
+  "active": true,
+  "connections": {
+    "Actualizar Valor Reply Category": {
+      "main": [
+        [
+          {
+            "index": 2,
+            "node": "Merge",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Borrar Valor Reply Category": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Actualizar Valor Reply Category",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Call '[02] Turn 1 Generation - MEGA'": {
+      "main": [
+        [
+          {
+            "index": 1,
+            "node": "Merge",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Is high interest?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Do Not Contact": {
+      "main": [
+        [
+          {
+            "index": 4,
+            "node": "Merge",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Gate: Skip if classified": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Message a model",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
+    "HubSpot lookup contact": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Slack notify high-interest",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Insert reply outcome": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Call WF02b Turn 2 Generator",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Interested": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Call '[02] Turn 1 Generation - MEGA'",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Is high interest?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "HubSpot lookup contact",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Switch",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Is subsequent reply?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert reply outcome",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Supabase: Mark as classified",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Lookup previous turn": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Is subsequent reply?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Manual Review": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Merge",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Supabase: Save classification",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Code in JavaScript",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Not interested": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Borrar Valor Reply Category",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Slack notify high-interest": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Switch",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Supabase: Mark as classified": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Gate: Skip if classified",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Supabase: Save classification": {
+      "main": [
+        []
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Manual Review",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Interested",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Not interested",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Wrong Person",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Do Not Contact",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Lookup previous turn",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Wrong Person": {
+      "main": [
+        [
+          {
+            "index": 3,
+            "node": "Merge",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "Gs1bLYpaMktZ1M5D",
+  "name": "[GTM] New Reply > Category update",
+  "nodes": [
+    {
+      "id": "241ae4a8-be8b-4949-a4cf-ae456c135c3f",
+      "name": "When Executed by Another Workflow",
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "position": [
+        -1056,
+        0
+      ],
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1
+    },
+    {
+      "credentials": {
+        "anthropicApi": {
+          "id": "ES2QcyKjReuRCmDf",
+          "name": "Anthropic account"
+        }
+      },
+      "id": "6a60f07a-5b6b-406c-982d-7217e91e4d98",
+      "name": "Message a model",
+      "parameters": {
+        "messages": {
+          "values": [
+            {
+              "content": "=Asunto del hilo: \"{{ $('When Executed by Another Workflow').item.json.body.subject }}\"\n\nRespuesta del lead:\n\"\"\"\n{{ $('When Executed by Another Workflow').item.json.body.reply_message.text }}\n\"\"\""
+            }
+          ]
+        },
+        "modelId": {
+          "__rl": true,
+          "cachedResultName": "claude-opus-4-7",
+          "mode": "list",
+          "value": "claude-opus-4-7"
+        },
+        "options": {
+          "system": "=Eres un clasificador de respuestas a emails B2B de cold outreach en español. Tu única función es asignar una categoría a la respuesta del lead y devolver un JSON. No conversas, no pides aclaraciones, no explicas. Recibes un email y devuelves JSON.\n\n# Categorías\n\nAsignas exactamente UNA de estas 5 categorías:\n\n1. \"Interested\" — El lead muestra cualquier interés positivo: curiosidad, hace preguntas, pide info/vídeo/llamada, da teléfono, dice \"sí/envíamelo\", pregunta qué hacemos. Aunque sea tibio, si NO rechaza → Interested. Si redirige a otra persona PERO con tono colaborativo/positivo (\"habla con mi compañero X que esto le encaja\", \"te paso con Juan que le interesará\") → Interested.\n\n2. \"Not interested\" — El lead rechaza educada o directamente, ahora. No exige baja ni amenaza. Ejemplos: \"no nos interesa\", \"no es prioridad\", \"no encaja\", \"ya tenemos proveedor\".\n\n3. \"Wrong person\" — Desvío neutro. El lead dice que no es el contacto, redirige sin posicionarse (\"yo no llevo esto\", \"escribe a info@\", \"ya no trabajo aquí\"), OOO sin redirigir, autoresponder neutro. Sin valoración positiva ni negativa.\n\n4. \"Do Not Contact\" — El lead exige explícitamente baja/borrado, amenaza con denuncia/RGPD/GDPR/AEPD/abogado, dice \"spam\", responde en MAYÚSCULAS enfadado, pide unsubscribe directo. Más fuerte que Not interested.\n\n5. \"Manual Review\" — Solo cuando ninguna de las anteriores encaja claramente o la respuesta es tan ambigua/rara/incompleta que no puedes decidir con un mínimo de fiabilidad.\n\n# Política conservadora\n\n- Preferimos falsos negativos a falsos positivos en \"Interested\" SOLO frente a Wrong person y Do Not Contact (esos sí tienen coste real). Si dudas entre Interested y Wrong person → Wrong person. Si dudas entre Interested y Do Not Contact → Do Not Contact.\n- Excepción: respuestas cortas afirmativas en español (\"Sí\", \"Sí gracias\", \"Ok\", \"Vale\", \"Perfecto\", \"Claro\", \"Adelante\", \"Cuéntame más\", \"Envíamelo\") son Interested con confidence ≥90, aunque sean cortas. No bajes confidence solo por brevedad si el mensaje es inequívocamente afirmativo. Estas respuestas nunca son Wrong person ni Do Not Contact.\n- En Do Not Contact sé agresivo: ante cualquier indicio de baja, amenaza legal o RGPD → DNC sin dudar.\n- Mensajes ambiguos sin afirmación clara (\"hola?\", \"??\", emojis sueltos): confidence 40-60.\n\n# Formato de salida\n\nDevuelves SIEMPRE un JSON válido con esta estructura exacta, sin texto adicional, sin markdown, sin comentarios:\n\n{\n  \"categoria\": \"Interested\" | \"Not interested\" | \"Wrong person\" | \"Do Not Contact\" | \"Manual Review\",\n  \"confidence\": 0-100,\n  \"categoria_secundaria\": \"Interested\" | \"Not interested\" | \"Wrong person\" | \"Do Not Contact\",\n  \"razon\": \"frase corta, máximo 15 palabras\",\n  \"nivel_interes\": \"alto\" | \"medio\" | \"bajo\" | \"n/a\"\n}\n\n# Guía de nivel_interes (campo NUEVO)\n\nSolo aplica si categoria==\"Interested\". Si NO es Interested, devuelve \"n/a\".\n\n- \"alto\": el lead pide canal directo (\"llámame\", \"mándame WhatsApp\", \"que me llame alguien\", \"podemos hablar por teléfono\"), muestra urgencia (\"necesito esto YA\", \"lo necesito esta semana\"), ya viene pre-calificado y solo le falta agendar (\"me parece bien, dime cuándo hablamos\"), o pide info concreta para decisión rápida.\n- \"medio\": muestra interés genuino sin señales fuertes — \"cuéntame más\", \"me interesa pero quiero entender\", pregunta detalles concretos del servicio sin urgencia.\n- \"bajo\": respuesta tibia, dudas de fondo, ambigüedad, \"ya os escribiré más adelante\", \"necesito pensarlo\".\n\nSé conservador: ante dudas entre alto/medio → medio. Reserva \"alto\" para casos donde un humano DEBERÍA actuar AHORA (llamada inmediata).\n\n# Guía de confidence\n\n- 95-100: clarísimo, ejemplo de libro\n- 85-94: claro pero con algún matiz\n- 70-84: probable, hay alguna ambigüedad\n- 60-69: dudoso, podría ser la categoría secundaria\n- <60: muy ambiguo, mensaje raro/corto/incompleto\n\n# Ejemplos\n\nA continuación tienes ejemplos de clasificación. Sigue el mismo formato exacto.\n\n---\n\nAsunto del hilo: \"vi tu email\"\nRespuesta del lead: \"Sí, cuéntame más\"\n→ {\"categoria\": \"Interested\", \"confidence\": 95, \"categoria_secundaria\": \"Not interested\", \"razon\": \"afirmación corta inequívoca pidiendo más información\"}\n\n---\n\nAsunto del hilo: \"una idea para vuestra tienda\"\nRespuesta del lead: \"Envíame el vídeo cuando lo tengas\"\n→ {\"categoria\": \"Interested\", \"confidence\": 96, \"categoria_secundaria\": \"Not interested\", \"razon\": \"petición explícita del recurso ofrecido\"}\n\n---\n\nAsunto del hilo: \"duda sobre vuestro ecommerce\"\nRespuesta del lead: \"¿Qué hacéis exactamente? Suena interesante pero quiero entenderlo mejor antes de agendar nada\"\n→ {\"categoria\": \"Interested\", \"confidence\": 92, \"categoria_secundaria\": \"Not interested\", \"razon\": \"pregunta directa por el servicio con interés explícito\"}\n\n---\n\nAsunto del hilo: \"una idea rápida\"\nRespuesta del lead: \"Habla con mi compañero Carlos que es quien lleva esto. Le interesará seguro: carlos@empresa.com\"\n→ {\"categoria\": \"Interested\", \"confidence\": 88, \"categoria_secundaria\": \"Wrong person\", \"razon\": \"redirección con tono positivo y endorsement\"}\n\n---\n\nAsunto del hilo: \"vi vuestra web\"\nRespuesta del lead: \"¿Tenéis algún caso de éxito de tiendas parecidas a la nuestra?\"\n→ {\"categoria\": \"Interested\", \"confidence\": 90, \"categoria_secundaria\": \"Not interested\", \"razon\": \"pregunta cualificadora típica de interés real\"}\n\n---\n\nAsunto del hilo: \"vi algo en vuestra tienda\"\nRespuesta del lead: \"Estoy un poco liada esta semana pero mándame info y lo miro el lunes\"\n→ {\"categoria\": \"Interested\", \"confidence\": 85, \"categoria_secundaria\": \"Not interested\", \"razon\": \"abre puerta y pide material aunque pospone\"}\n\n---\n\nAsunto del hilo: \"una mejora para tu ecommerce\"\nRespuesta del lead: \"Perfecto\"\n→ {\"categoria\": \"Interested\", \"confidence\": 90, \"categoria_secundaria\": \"Not interested\", \"razon\": \"afirmación corta inequívoca\"}\n\n---\n\nAsunto del hilo: \"propuesta para vuestra tienda\"\nRespuesta del lead: \"Suena bien, ¿podemos agendar 15 min la semana que viene?\"\n→ {\"categoria\": \"Interested\", \"confidence\": 98, \"categoria_secundaria\": \"Not interested\", \"razon\": \"pide reunión explícitamente\"}\n\n---\n\nAsunto del hilo: \"tema ventas\"\nRespuesta del lead: \"Ahora mismo no es prioridad, gracias\"\n→ {\"categoria\": \"Not interested\", \"confidence\": 92, \"categoria_secundaria\": \"Do Not Contact\", \"razon\": \"rechazo educado sin amenaza ni petición de baja\"}\n\n---\n\nAsunto del hilo: \"una idea para tu tienda\"\nRespuesta del lead: \"No nos encaja, ya trabajamos con otra agencia\"\n→ {\"categoria\": \"Not interested\", \"confidence\": 94, \"categoria_secundaria\": \"Do Not Contact\", \"razon\": \"rechazo con motivo concreto sin hostilidad\"}\n\n---\n\nAsunto del hilo: \"vi tu tienda\"\nRespuesta del lead: \"No gracias\"\n→ {\"categoria\": \"Not interested\", \"confidence\": 90, \"categoria_secundaria\": \"Do Not Contact\", \"razon\": \"rechazo escueto y educado\"}\n\n---\n\nAsunto del hilo: \"consulta rápida\"\nRespuesta del lead: \"Yo no llevo eso, escribe a info@empresa.com\"\n→ {\"categoria\": \"Wrong person\", \"confidence\": 95, \"categoria_secundaria\": \"Not interested\", \"razon\": \"redirección neutra a buzón genérico sin posicionarse\"}\n\n---\n\nAsunto del hilo: \"para el responsable de ecommerce\"\nRespuesta del lead: \"Ya no trabajo en esta empresa desde hace meses\"\n→ {\"categoria\": \"Wrong person\", \"confidence\": 96, \"categoria_secundaria\": \"Not interested\", \"razon\": \"ya no es el contacto válido, sin opinión sobre la propuesta\"}\n\n---\n\nAsunto del hilo: \"una propuesta\"\nRespuesta del lead: \"Estaré fuera de la oficina hasta el 15 de septiembre con acceso limitado al correo. Para urgencias contactar con recepción.\"\n→ {\"categoria\": \"Wrong person\", \"confidence\": 88, \"categoria_secundaria\": \"Not interested\", \"razon\": \"autoresponder OOO neutro sin redirección comercial\"}\n\n---\n\nAsunto del hilo: \"vi tu web\"\nRespuesta del lead: \"Danke für Deine Nachricht. Wir werden diese so schnell wie möglich beantworten.\"\n→ {\"categoria\": \"Wrong person\", \"confidence\": 75, \"categoria_secundaria\": \"Not interested\", \"razon\": \"autoresponder genérico de recepción sin posicionamiento\"}\n\n---\n\nAsunto del hilo: \"duda sobre conversión\"\nRespuesta del lead: \"BORRA MI EMAIL DE TUS LISTAS AHORA MISMO\"\n→ {\"categoria\": \"Do Not Contact\", \"confidence\": 99, \"categoria_secundaria\": \"Not interested\", \"razon\": \"exigencia explícita de baja en mayúsculas\"}\n\n---\n\nAsunto del hilo: \"una idea\"\nRespuesta del lead: \"Si volvéis a escribir os denunciamos por incumplimiento del RGPD.\"\n→ {\"categoria\": \"Do Not Contact\", \"confidence\": 99, \"categoria_secundaria\": \"Not interested\", \"razon\": \"amenaza legal explícita con mención RGPD\"}\n\n---\n\nAsunto del hilo: \"para el responsable\"\nRespuesta del lead: \"Esto es spam puro, dejad de molestar.\"\n→ {\"categoria\": \"Do Not Contact\", \"confidence\": 96, \"categoria_secundaria\": \"Not interested\", \"razon\": \"calificación explícita de spam y petición de cese\"}\n\n---\n\nAsunto del hilo: \"vi tu tienda\"\nRespuesta del lead: \"Déjame en paz.\"\n→ {\"categoria\": \"Do Not Contact\", \"confidence\": 94, \"categoria_secundaria\": \"Not interested\", \"razon\": \"petición agresiva de cese de comunicación\"}\n\n---\n\nAsunto del hilo: \"?\"\nRespuesta del lead: \"??\"\n→ {\"categoria\": \"Manual Review\", \"confidence\": 35, \"categoria_secundaria\": \"Wrong person\", \"razon\": \"respuesta ininteligible sin contexto suficiente\"}"
+        }
+      },
+      "position": [
+        240,
+        -176
+      ],
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1
+    },
+    {
+      "id": "78016b9d-f5bf-415f-b48b-68657bb1c9ad",
+      "name": "Code in JavaScript",
+      "parameters": {
+        "jsCode": "// Parseamos el JSON que devuelve Claude en content[0].text\nconst claudeResponse = $input.first().json.content[0].text;\n\nlet parsed;\ntry {\n  parsed = JSON.parse(claudeResponse);\n} catch (error) {\n  // Si Claude devuelve algo que no es JSON válido, lo marcamos como Manual Review\n  parsed = {\n    categoria: \"Manual Review\",\n    confidence: 0,\n    categoria_secundaria: \"Manual Review\",\n    razon: \"Error al parsear respuesta del modelo: \" + error.message,\n    parse_error: true\n  };\n}\n\n// Devolvemos un objeto plano con los campos clasificados\nreturn [\n  {\n    json: {\n      categoria: parsed.categoria,\n      confidence: parsed.confidence,\n      categoria_secundaria: parsed.categoria_secundaria,\n      razon: parsed.razon,\n      needs_review: parsed.confidence < 60 || parsed.parse_error === true || parsed.categoria === \"Manual Review\",\n      parse_error: parsed.parse_error || false,\n      nivel_interes: parsed.nivel_interes || 'n/a'\n    }\n  }\n];"
+      },
+      "position": [
+        544,
+        -192
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "40c0d6df-1bba-48b1-9b7b-08b353785b31",
+      "name": "Switch",
+      "parameters": {
+        "looseTypeValidation": "=",
+        "options": {},
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "457e2426-9681-4284-9006-bfcf1f52a3fa",
+                    "leftValue": "={{ $('Code in JavaScript').first().json.needs_review }}",
+                    "operator": {
+                      "operation": "true",
+                      "singleValue": true,
+                      "type": "boolean"
+                    },
+                    "rightValue": "{{true}}"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Manual Review",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "a5d63788-d0f9-48aa-b0aa-c2f6b4747e20",
+                    "leftValue": "={{ $('Code in JavaScript').first().json.categoria }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "Interested"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Interested",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "dbd419cc-865f-4987-bbf7-25801262f0eb",
+                    "leftValue": "={{ $('Code in JavaScript').first().json.categoria }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "Not interested"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Not Interested",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "26dd59a8-6c94-4570-a317-b98522692a0f",
+                    "leftValue": "={{ $('Code in JavaScript').first().json.categoria }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "Wrong person"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Wrong Person",
+              "renameOutput": true
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "c8b169bf-8fa2-4fcd-b00c-9197a124e223",
+                    "leftValue": "={{ $('Code in JavaScript').first().json.categoria }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "Do Not Contact"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                }
+              },
+              "outputKey": "Do Not Contact",
+              "renameOutput": true
+            }
+          ]
+        }
+      },
+      "position": [
+        800,
+        -240
+      ],
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "4f3129a3-8e34-4a0c-b1fa-0eb874598c12",
+      "name": "Manual Review",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "{\n  \"category_id\": 136036\n}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $('When Executed by Another Workflow').item.json.body.campaign_id }}/leads/{{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}/category"
+      },
+      "position": [
+        1104,
+        -480
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "8bf91209-e698-4e42-96ec-a6b601983151",
+      "name": "Wrong Person",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "{\n  \"category_id\": 7\n}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $('When Executed by Another Workflow').item.json.body.campaign_id }}/leads/{{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}/category"
+      },
+      "position": [
+        1168,
+        64
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "2e66a13d-bd0d-423b-95cb-5e9d6c5c020f",
+      "name": "Do Not Contact",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "{\n  \"category_id\": 4\n}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $('When Executed by Another Workflow').item.json.body.campaign_id }}/leads/{{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}/category"
+      },
+      "position": [
+        1168,
+        208
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "5a487c84-0d0d-455a-8232-354623c105b7",
+      "name": "Interested",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "{\n  \"category_id\": 1\n}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $('When Executed by Another Workflow').item.json.body.campaign_id }}/leads/{{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}/category"
+      },
+      "position": [
+        1152,
+        -320
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "DiBPMJq48rUwXYFu",
+          "name": "Smartlead API"
+        }
+      },
+      "id": "33e01966-c0e0-4cc6-bfb0-3262d771384d",
+      "name": "Not interested",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "{\n  \"category_id\": 3\n}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "=https://server.smartlead.ai/api/v1/campaigns/{{ $('When Executed by Another Workflow').item.json.body.campaign_id }}/leads/{{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}/category"
+      },
+      "position": [
+        1152,
+        -64
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "id": "9f30a276-2dd2-4665-8472-1fdb4ec11cbd",
+      "name": "Gate: Skip if classified",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7c7464eb-c296-4cfb-b226-0f3e4cdd5a44",
+              "leftValue": "={{ $json.lead_map_id }}",
+              "operator": {
+                "operation": "exists",
+                "singleValue": true,
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        -144,
+        -192
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "rrWHhrv5MXmcgaPY",
+          "name": "Supabase CIO - data-intelligence"
+        }
+      },
+      "id": "d3f475a8-aca1-46a3-ae5e-91cdeabd449d",
+      "name": "Supabase: Mark as classified",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO lead_classifications (lead_map_id, lead_id, campaign_id)\nVALUES (\n  {{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_map_id }},\n  {{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }},\n  {{ $('When Executed by Another Workflow').item.json.body.campaign_id }}\n)\nON CONFLICT (lead_map_id) DO NOTHING\nRETURNING lead_map_id;"
+      },
+      "position": [
+        -304,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "rrWHhrv5MXmcgaPY",
+          "name": "Supabase CIO - data-intelligence"
+        }
+      },
+      "id": "b3c805fc-bb00-4bf1-9ffc-02138ab982b9",
+      "name": "Supabase: Save classification",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "UPDATE lead_classifications\n     SET \n       categoria = '{{ $('Code in JavaScript').item.json.categoria }}',\n       confidence = {{ $('Code in JavaScript').item.json.confidence }},\n       categoria_secundaria = '{{ $('Code in JavaScript').item.json.categoria_secundaria }}',\n       razon = $$ {{ $('Code in JavaScript').item.json.razon }} $$,\n       needs_review = {{ $('Code in JavaScript').item.json.needs_review }}\n     WHERE lead_map_id = {{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_map_id }};"
+      },
+      "position": [
+        2144,
+        -144
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "61e3ee1a-c429-4b7a-9898-3eb96d055d94",
+      "name": "Merge",
+      "parameters": {
+        "numberInputs": 5
+      },
+      "position": [
+        1936,
+        -192
+      ],
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2
+    },
+    {
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "Tgw8UOm4Rk88kpnX",
+          "name": "Token C.io HubSpot"
+        }
+      },
+      "id": "3a650bc3-e6dc-4a54-b94d-13b41a1882bd",
+      "name": "Actualizar Valor Reply Category",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "headerParameters": {
+          "parameters": []
+        },
+        "jsonBody": "{\n  \"properties\": {\n    \"cold_email__last_reply_category\": \"Not Interested\"\n  }\n}",
+        "method": "PATCH",
+        "options": {},
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "idProperty",
+              "value": "email"
+            }
+          ]
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "sendQuery": true,
+        "specifyBody": "json",
+        "url": "=https://api.hubapi.com/crm/v3/objects/contacts/{{  $('When Executed by Another Workflow').item.json.body.sl_lead_email }}"
+      },
+      "position": [
+        1536,
+        -96
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "Tgw8UOm4Rk88kpnX",
+          "name": "Token C.io HubSpot"
+        }
+      },
+      "id": "6cf2c648-3bc5-43e8-8913-032b0f67dea9",
+      "name": "Borrar Valor Reply Category",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "headerParameters": {
+          "parameters": []
+        },
+        "jsonBody": "{\n  \"properties\": {\n    \"cold_email__last_reply_category\": \"\"\n  }\n}",
+        "method": "PATCH",
+        "options": {},
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "idProperty",
+              "value": "email"
+            }
+          ]
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "sendQuery": true,
+        "specifyBody": "json",
+        "url": "=https://api.hubapi.com/crm/v3/objects/contacts/{{  $('When Executed by Another Workflow').item.json.body.sl_lead_email }}"
+      },
+      "position": [
+        1360,
+        -80
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "id": "c224b57c-0fd8-4c7b-95b2-52455e5cea27",
+      "name": "Call '[02] Turn 1 Generation - MEGA'",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "options": {},
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "GTM - 001 - WF02 - Turn 1 Pipeline",
+          "cachedResultUrl": "/workflow/Y0k0uh5KX2TvDzFf",
+          "mode": "list",
+          "value": "Y0k0uh5KX2TvDzFf"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "body",
+              "id": "body",
+              "required": false,
+              "type": "object"
+            }
+          ],
+          "value": {
+            "body": "={{ $('When Executed by Another Workflow').item.json.body }}"
+          }
+        }
+      },
+      "position": [
+        1360,
+        -288
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3
+    },
+    {
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "lookup-prev-turn-001",
+      "name": "Lookup previous turn",
+      "parameters": {
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "smartlead_lead_id",
+              "keyValue": "={{ $('When Executed by Another Workflow').item.json.body.sl_email_lead_id }}"
+            }
+          ]
+        },
+        "limit": 1,
+        "matchType": "allFilters",
+        "operation": "getAll",
+        "tableId": "cl001_p007_turn1_pipeline"
+      },
+      "position": [
+        -736,
+        64
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "is-subsequent-reply-001",
+      "name": "Is subsequent reply?",
+      "parameters": {
+        "conditions": {
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "isr-cond-1",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "sent"
+            },
+            {
+              "id": "isr-cond-2",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "dry_run_only"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        -544,
+        48
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "call-wf02b-turn2-001",
+      "name": "Call WF02b Turn 2 Generator",
+      "parameters": {
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": false
+        },
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "nwY6oykHHKZmg5TA"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "matchingColumns": [],
+          "schema": [
+            {
+              "displayName": "body",
+              "id": "body",
+              "type": "object"
+            }
+          ],
+          "value": {
+            "body": "={{ ({previous_turn_id: $('Lookup previous turn').item.json.id, sl_email_lead_id: $('When Executed by Another Workflow').item.json.body.sl_email_lead_id, sl_lead_email: $('When Executed by Another Workflow').item.json.body.sl_lead_email, lead_name: $('When Executed by Another Workflow').item.json.body.lead_name, setter_name: $('Lookup previous turn').item.json.setter_name || 'Laura', campaign_id: $('When Executed by Another Workflow').item.json.body.campaign_id, stats_id: $('When Executed by Another Workflow').item.json.body.stats_id, reply_message: $('When Executed by Another Workflow').item.json.body.reply_message, reply_text: $('When Executed by Another Workflow').item.json.body.reply_text}) }}"
+          }
+        }
+      },
+      "position": [
+        -176,
+        -368
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2
+    },
+    {
+      "id": "if-high-interest",
+      "name": "Is high interest?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "hi-cond-1",
+              "leftValue": "={{ $json.nivel_interes }}",
+              "operator": {
+                "name": "filter.operator.equals",
+                "operation": "equals",
+                "type": "string"
+              },
+              "rightValue": "alto"
+            }
+          ],
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        -128,
+        80
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "slack-notify-high-interest",
+      "name": "Slack notify high-interest",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ JSON.stringify({\n  text: \"🔥 Lead high-interest detectado\",\n  blocks: [\n    { type: \"header\", text: { type: \"plain_text\", text: \"🔥 Lead high-interest\" } },\n    { type: \"section\", fields: [\n      { type: \"mrkdwn\", text: \"*Lead:*\\n\" + ($('When Executed by Another Workflow').item.json.body.lead_name || $('When Executed by Another Workflow').item.json.body.sl_lead_email || 'sin nombre') },\n      { type: \"mrkdwn\", text: \"*Email:*\\n\" + ($('When Executed by Another Workflow').item.json.body.sl_lead_email || '—') },\n      { type: \"mrkdwn\", text: \"*Categoria IA:*\\n\" + ($('Code in JavaScript').first().json.categoria || '?') },\n      { type: \"mrkdwn\", text: \"*Nivel interés:*\\n\" + ($('Code in JavaScript').first().json.nivel_interes || '?') }\n    ] },\n    { type: \"section\", text: { type: \"mrkdwn\", text: \"*Reply:*\\n>\" + (($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.text) || '').slice(0, 280).replace(/\\n/g, '\\n>') } },\n    { type: \"section\", text: { type: \"mrkdwn\", text: \"*Razón clasificación:*\\n\" + ($('Code in JavaScript').first().json.razon || 'sin razón') } },\n    { type: \"actions\", elements: [\n      ($('HubSpot lookup contact').first().json && $('HubSpot lookup contact').first().json.id)\n        ? { type: \"button\", text: { type: \"plain_text\", text: \"Abrir ficha en HubSpot ↗\" }, style: \"primary\", url: \"https://app-eu1.hubspot.com/contacts/144169719/contact/\" + $('HubSpot lookup contact').first().json.id }\n        : { type: \"button\", text: { type: \"plain_text\", text: \"Buscar en HubSpot por email ↗\" }, url: \"https://app-eu1.hubspot.com/contacts/144169719/objects/0-1/views/all/list?query=\" + encodeURIComponent($('When Executed by Another Workflow').item.json.body.sl_lead_email || '') }\n    ] },\n    { type: \"context\", elements: [\n      { type: \"mrkdwn\", text: \"_Setting Pilot Bot · campaign \" + ($('When Executed by Another Workflow').item.json.body.campaign_id || '?') + \" · sl_lead_id \" + ($('When Executed by Another Workflow').item.json.body.sl_email_lead_id || '?') + \"_\" }\n    ] }\n  ]\n}) }}",
+        "method": "POST",
+        "options": {
+          "timeout": 10000
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "url": "https://hooks.slack.com/services/__SLACK_WEBHOOK_REDACTED__"
+      },
+      "position": [
+        96,
+        80
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4
+    },
+    {
+      "alwaysOutputData": true,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "__HUBSPOT_APP_TOKEN_REDACTED__",
+          "name": "C.io Token HubSpot"
+        }
+      },
+      "id": "hs-search-high-interest",
+      "name": "HubSpot lookup contact",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "additionalFields": {
+          "properties": [
+            "email",
+            "firstname",
+            "lastname",
+            "hs_object_id"
+          ]
+        },
+        "authentication": "appToken",
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "email|string",
+                    "value": "={{ $('When Executed by Another Workflow').item.json.body.sl_lead_email }}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "operation": "search"
+      },
+      "position": [
+        -260,
+        80
+      ],
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "insert-reply-outcome",
+      "name": "Insert reply outcome",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "pipeline_id",
+              "fieldValue": "={{ $('Lookup previous turn').item.json.id }}"
+            },
+            {
+              "fieldId": "outcome",
+              "fieldValue": "replied"
+            },
+            {
+              "fieldId": "outcome_source",
+              "fieldValue": "smartlead_webhook"
+            },
+            {
+              "fieldId": "occurred_at",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.time_replied || $now.toISO() }}"
+            },
+            {
+              "fieldId": "details",
+              "fieldValue": "={{ ({reply_text: ($('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.text || '').slice(0, 1000), reply_message_id: $('When Executed by Another Workflow').item.json.body.reply_message && $('When Executed by Another Workflow').item.json.body.reply_message.message_id, sl_email_lead_id: $('When Executed by Another Workflow').item.json.body.sl_email_lead_id, previous_turn_type: $('Lookup previous turn').item.json.turn_type, previous_turn_number: $('Lookup previous turn').item.json.turn_number}) }}"
+            }
+          ]
+        },
+        "tableId": "cl001_p007_outcomes"
+      },
+      "position": [
+        0,
+        -360
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    }
+  ],
+  "settings": {
+    "binaryMode": "separate",
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

@@ -1,0 +1,154 @@
+{
+  "active": true,
+  "connections": {
+    "Every 5 min": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Find retriable error_send",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Find final failures": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Slack alert + mark alerted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Find retriable error_send": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Retry + bump counter",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Retry + bump counter": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Find final failures",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "RAVhnYHki4LmCUle",
+  "name": "GTM - 001 - WF08 - Auto-retry error_send",
+  "nodes": [
+    {
+      "id": "trigger-schedule",
+      "name": "Every 5 min",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "position": [
+        240,
+        0
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "find-retriable",
+      "name": "Find retriable error_send",
+      "parameters": {
+        "jsCode": "// Busca rows status=error_send con sdr_action!=null que necesitan retry.\n// Criterio: retry_count < 3 AND (last_retry IS NULL OR last_retry < now-5min)\n// Devuelve cada row como un item.\n\nconst url = 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_turn1_pipeline';\nconst params = new URLSearchParams({\n  status: 'eq.error_send',\n  sdr_action: 'not.is.null',\n  error_send_retry_count: 'lt.3',\n  select: 'id,lead_email,error_send_retry_count,error_send_last_retry_at,smartlead_lead_id,smartlead_thread_id,campaign_id,hubspot_contact_id',\n  order: 'sdr_action_timestamp.asc',\n  limit: '50',\n});\n\nconst rows = await this.helpers.httpRequestWithAuthentication.call(\n  this, 'supabaseApi',\n  { method: 'GET', url: url + '?' + params.toString(), json: true }\n);\n\nconst NOW = Date.now();\nconst MS_5MIN = 5 * 60 * 1000;\nconst eligible = (Array.isArray(rows) ? rows : []).filter(r => {\n  if (!r.error_send_last_retry_at) return true;\n  const last = Date.parse(r.error_send_last_retry_at);\n  return (NOW - last) >= MS_5MIN;\n});\n\nreturn eligible.map(r => ({ json: r }));"
+      },
+      "position": [
+        460,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "retry-and-update",
+      "name": "Retry + bump counter",
+      "parameters": {
+        "jsCode": "// Para cada row: incrementar contador + last_retry timestamp\n// y disparar webhook turn1-send-from-lovable.\n// Si tras el incremento count llega a 3 (= último intento), flag para Slack.\n\nconst items = $input.all();\nconst out = [];\nconst NOW = new Date().toISOString();\n\nfor (const item of items) {\n  const row = item.json;\n  const pid = row.id;\n  const newCount = (row.error_send_retry_count || 0) + 1;\n  const isFinalAttempt = newCount >= 3;\n\n  // PATCH row counter\n  const supaUrl = 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_turn1_pipeline?id=eq.' + pid;\n  await this.helpers.httpRequestWithAuthentication.call(\n    this, 'supabaseApi',\n    {\n      method: 'PATCH',\n      url: supaUrl,\n      body: { error_send_retry_count: newCount, error_send_last_retry_at: NOW },\n      json: true,\n      headers: { Prefer: 'return=minimal' },\n    }\n  );\n\n  // Trigger the WF02 v2 send webhook. Si tiene éxito → status cambia a 'sent'\n  // automáticamente, sino sigue en error_send y reintentaremos en 5 min más\n  // (hasta retry_count=3).\n  try {\n    await this.helpers.httpRequest.call(this, {\n      method: 'POST',\n      url: 'https://cion8napp.nexau.es/webhook/turn1-send-from-lovable',\n      body: { pipeline_id: pid },\n      json: true,\n      timeout: 30000,\n    });\n  } catch (e) {\n    // Si el webhook falla, seguirá en error_send y reintenta en 5 min\n  }\n\n  out.push({ json: { ...row, new_retry_count: newCount, is_final_attempt: isFinalAttempt } });\n}\nreturn out;"
+      },
+      "position": [
+        680,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "find-final-failures",
+      "name": "Find final failures",
+      "parameters": {
+        "jsCode": "// Esperar 8 segundos para dar tiempo a Smartlead/WF02 v2 a actualizar el\n// status. Luego releer cada row para ver cuáles siguen en error_send\n// tras intentar enviar (= retry falló).\nawait new Promise(r => setTimeout(r, 8000));\n\nconst items = $input.all();\nconst pids = items.map(i => i.json.id).map(id => '\"' + id + '\"').join(',');\nif (!pids) return [];\nconst url = 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_turn1_pipeline';\nconst params = new URLSearchParams({\n  id: 'in.(' + pids + ')',\n  select: 'id,lead_email,status,error_send_retry_count,error_send_alerted_at',\n});\nconst rows = await this.helpers.httpRequestWithAuthentication.call(\n  this, 'supabaseApi',\n  { method: 'GET', url: url + '?' + params.toString(), json: true }\n);\n\n// Detectar los que siguen en error_send Y ya hicieron 3 reintentos Y\n// nunca se alertó. Esos van a Slack.\nconst toAlert = (rows || []).filter(r =>\n  r.status === 'error_send' && r.error_send_retry_count >= 3 && !r.error_send_alerted_at\n);\nreturn toAlert.map(r => ({ json: r }));"
+      },
+      "position": [
+        900,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": {
+          "id": "m4dyIAOkci8VIxok",
+          "name": "Supabase Outbound"
+        }
+      },
+      "id": "slack-alert",
+      "name": "Slack alert + mark alerted",
+      "parameters": {
+        "jsCode": "// Para cada caso final: enviar alerta Slack + marcar alerted_at\nconst SLACK_URL = 'https://hooks.slack.com/services/__SLACK_WEBHOOK_REDACTED__';\nconst items = $input.all();\nconst NOW = new Date().toISOString();\n\nfor (const item of items) {\n  const row = item.json;\n  // Slack notify\n  try {\n    await this.helpers.httpRequest.call(this, {\n      method: 'POST',\n      url: SLACK_URL,\n      body: {\n        text: '🚨 Auto-retry error_send agotado',\n        blocks: [\n          { type: 'section', text: { type: 'mrkdwn',\n              text: '🚨 *3 reintentos sin éxito para enviar Turn 1*\\n\\n' +\n                    '• Lead: `' + row.lead_email + '`\\n' +\n                    '• Pipeline: `' + row.id + '`\\n' +\n                    '• Acción: revisar manualmente en /lead/' + encodeURIComponent(row.lead_email)\n          } },\n        ]\n      },\n      json: true,\n      timeout: 10000,\n    });\n  } catch (e) {}\n\n  // Mark alerted to avoid re-spam\n  const url = 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_turn1_pipeline?id=eq.' + row.id;\n  await this.helpers.httpRequestWithAuthentication.call(\n    this, 'supabaseApi',\n    {\n      method: 'PATCH',\n      url: url,\n      body: { error_send_alerted_at: NOW },\n      json: true,\n      headers: { Prefer: 'return=minimal' },\n    }\n  );\n}\nreturn items;"
+      },
+      "position": [
+        1120,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
