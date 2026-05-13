@@ -446,6 +446,68 @@ export const approveQuick = createServerFn({ method: "POST" })
   });
 
 /**
+ * Aprobación con edición desde el quick-gate. El operador modificó el Turn 1
+ * propuesto y opcionalmente dejó razones de coaching (qué le falló al modelo)
+ * que sirven para iterar el prompt. Resultado:
+ *   - turn_1_final = versión editada
+ *   - sdr_action = 'edited_via_quick_gate' (distinguible en stats)
+ *   - razones se guardan en edit_reasons como feedback para el coach
+ *   - envío automático del editado vía webhook n8n
+ */
+export const approveQuickWithEdit = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      id: string;
+      original: string;
+      edited: string;
+      reasons: string[];
+      otherReason?: string;
+    }) => data
+  )
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    const before = (await pgrest(
+      `${TABLE}?id=eq.${encodeURIComponent(data.id)}&select=status&limit=1`,
+      { method: "GET" }
+    )) as Array<{ status: string | null }>;
+    if (!before?.[0]) return { ok: false, error: "Caso no encontrado" };
+    if (before[0].status !== "pending_quick_review") {
+      return {
+        ok: false,
+        error: `El caso no está en pending_quick_review (status=${before[0].status})`,
+      };
+    }
+    const allReasons = [
+      ...data.reasons,
+      ...(data.otherReason ? [`otro: ${data.otherReason}`] : []),
+    ];
+    await updateCase(data.id, {
+      sdr_action: "edited_via_quick_gate",
+      sdr_user_id: null,
+      sdr_action_timestamp: new Date().toISOString(),
+      turn_1_final: data.edited,
+      edit_reason: allReasons.join(", "),
+      edit_diff: { original: data.original, edited: data.edited },
+      status: "ready_to_send",
+    });
+    if (allReasons.length > 0) {
+      try {
+        await pgrest(EDIT_REASONS_TABLE, {
+          method: "POST",
+          prefer: "return=minimal",
+          body: JSON.stringify(
+            allReasons.map((reason) => ({ pipeline_id: data.id, reason }))
+          ),
+        });
+      } catch (err) {
+        console.error("edit_reasons insert failed (quick-gate):", err);
+      }
+    }
+    await logEvent(data.id, "turn_1_edited_via_quick_gate", { reasons: allReasons });
+    await triggerSendWebhook(data.id);
+    return { ok: true };
+  });
+
+/**
  * Rechazo rápido ("No") desde /auto-send-monitor. NO marca el caso como
  * rejected definitivo — solo lo desbloquea para que entre al flujo de
  * triage humano normal (status='pending_review'). El SDR luego decide en

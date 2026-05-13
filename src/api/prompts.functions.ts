@@ -1525,6 +1525,18 @@ export type AutoSendCandidate = {
   gen_subgroup: string | null;
   gen_auto_send_enabled: boolean;
   gen_threshold: number;
+  // Campos extra para la revisión rica del operador
+  smartlead_lead_id: string | null;
+  hubspot_contact_id: string | null;
+  setter_name: string | null;
+  patron: string | null;
+  thread_snapshot: Array<{
+    type?: string;
+    seq?: number | null;
+    time?: string | null;
+    subject?: string | null;
+    body_text?: string;
+  }> | null;
 };
 export type AutoSendVersionConfig = {
   id: string;
@@ -1603,7 +1615,7 @@ export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
     const pipelineParams = new URLSearchParams({
       status: "eq.pending_quick_review",
       select:
-        "id,lead_email,lead_name,segmento,has_known_store,turn_type,score,validation_output,generator_version_id,created_at,reply_original,turn_1_generated",
+        "id,lead_email,lead_name,segmento,has_known_store,turn_type,score,validation_output,generator_version_id,created_at,reply_original,turn_1_generated,smartlead_lead_id,hubspot_contact_id,setter_name,patron,thread_snapshot",
       order: "created_at.desc",
       limit: "300",
     });
@@ -1624,6 +1636,17 @@ export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
       created_at: string | null;
       reply_original: string | null;
       turn_1_generated: string | null;
+      smartlead_lead_id: string | null;
+      hubspot_contact_id: string | null;
+      setter_name: string | null;
+      patron: string | null;
+      thread_snapshot: Array<{
+        type?: string;
+        seq?: number | null;
+        time?: string | null;
+        subject?: string | null;
+        body_text?: string;
+      }> | null;
     };
     const rows = ((await pgrest(`${PIPELINE_TABLE}?${pipelineParams.toString()}`, {
       method: "GET",
@@ -1663,6 +1686,11 @@ export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
         gen_subgroup: v?.subgroup ?? null,
         gen_auto_send_enabled: v?.auto_send_enabled ?? false,
         gen_threshold: threshold,
+        smartlead_lead_id: r.smartlead_lead_id,
+        hubspot_contact_id: r.hubspot_contact_id,
+        setter_name: r.setter_name,
+        patron: r.patron,
+        thread_snapshot: r.thread_snapshot,
       });
       // Counter para stats por versión (solo últimas 24h)
       const createdMs = r.created_at ? Date.parse(r.created_at) : 0;

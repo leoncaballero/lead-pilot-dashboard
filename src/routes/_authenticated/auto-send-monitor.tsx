@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   getAutoSendMonitor,
@@ -14,7 +15,20 @@ import {
   type HumanReviewByScore,
   type TopCriticalError,
 } from "@/api/prompts.functions";
-import { approveQuick, rejectQuick } from "@/api/triage.functions";
+import { approveQuick, approveQuickWithEdit, rejectQuick } from "@/api/triage.functions";
+import { ConversationThread } from "@/components/ConversationThread";
+import { HubSpotLeadContextCard } from "@/components/HubSpotLeadContext";
+
+// Mismas razones que /triage (consistencia de feedback)
+const COACHING_REASONS = [
+  "Halago disfrazado",
+  "Jerga consultor",
+  "Tono no encaja",
+  "Estructura incorrecta",
+  "Saludo incorrecto",
+  "Firma incorrecta",
+  "No respeta el reply del lead",
+];
 
 export const Route = createFileRoute("/_authenticated/auto-send-monitor")({
   loader: async () => await getAutoSendMonitor(),
@@ -59,6 +73,7 @@ function Page() {
     reviewed_total_14d,
   } = data;
   const approveFn = useServerFn(approveQuick);
+  const editApproveFn = useServerFn(approveQuickWithEdit);
   const rejectFn = useServerFn(rejectQuick);
   const [pending, setPending] = useState<string | null>(null);
 
@@ -92,6 +107,27 @@ function Page() {
     try {
       const res = await rejectFn({ data: { id } });
       if (!res.ok) alert(`Mover a triage falló: ${res.error}`);
+      await router.invalidate();
+    } catch (e) {
+      alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function handleEditAndApprove(
+    id: string,
+    original: string,
+    edited: string,
+    reasons: string[],
+    otherReason?: string
+  ) {
+    setPending(id);
+    try {
+      const res = await editApproveFn({
+        data: { id, original, edited, reasons, otherReason },
+      });
+      if (!res.ok) alert(`Editar y enviar falló: ${res.error}`);
       await router.invalidate();
     } catch (e) {
       alert(`Error: ${e instanceof Error ? e.message : String(e)}`);
@@ -202,6 +238,15 @@ function Page() {
                     disabled={pending !== null && pending !== c.pipeline_id}
                     onApprove={() => handleApprove(c.pipeline_id)}
                     onReject={() => handleReject(c.pipeline_id)}
+                    onEditAndApprove={(edited, reasons, otherReason) =>
+                      handleEditAndApprove(
+                        c.pipeline_id,
+                        c.turn_1_generated ?? "",
+                        edited,
+                        reasons,
+                        otherReason
+                      )
+                    }
                   />
                 ))}
               </div>
@@ -290,20 +335,39 @@ function CandidateRow({
   disabled,
   onApprove,
   onReject,
+  onEditAndApprove,
 }: {
   c: AutoSendCandidate;
   pending: boolean;
   disabled: boolean;
   onApprove: () => void;
   onReject: () => void;
+  onEditAndApprove: (edited: string, reasons: string[], otherReason?: string) => void;
 }) {
   const score = c.score ?? 0;
+  const original = c.turn_1_generated ?? "";
+  const [edited, setEdited] = useState(original);
+  const [reasons, setReasons] = useState<string[]>([]);
+  const [otherReason, setOtherReason] = useState("");
+  const [coachOpen, setCoachOpen] = useState(false);
+  const isEdited = edited.trim() !== original.trim();
   const ageMin = c.created_at
     ? Math.max(0, Math.floor((Date.now() - Date.parse(c.created_at)) / 60_000))
     : null;
+
+  function toggleReason(r: string) {
+    setReasons((prev) =>
+      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
+    );
+  }
+
+  function handleSendEdited() {
+    onEditAndApprove(edited, reasons, otherReason.trim() || undefined);
+  }
+
   return (
-    <div className="px-4 py-3 space-y-3">
-      {/* Header: lead + meta */}
+    <div className="px-4 py-4 space-y-4">
+      {/* === Header: lead + meta === */}
       <div className="flex items-center justify-between gap-2 flex-wrap text-sm">
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">
@@ -313,45 +377,174 @@ function CandidateRow({
             {c.lead_email}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
           <Badge className="h-5 text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 hover:bg-emerald-100">
             score {score}
           </Badge>
+          {c.patron && (
+            <Badge variant="outline" className="h-5 text-[10px]">
+              Patrón {c.patron}
+            </Badge>
+          )}
           {c.has_known_store === false && (
             <Badge variant="outline" className="h-5 text-[10px] bg-violet-50 dark:bg-violet-950/40">
               sin tienda
+            </Badge>
+          )}
+          {c.has_known_store === null && (
+            <Badge variant="outline" className="h-5 text-[10px] bg-slate-50 dark:bg-slate-950/40">
+              tienda?
             </Badge>
           )}
           <span>{ageMin !== null ? `hace ${formatAge(ageMin)}` : "—"}</span>
         </div>
       </div>
 
-      {/* Reply original del lead */}
-      {c.reply_original && (
-        <details className="rounded border bg-muted/30 px-2 py-1 text-[11px]">
-          <summary className="cursor-pointer text-muted-foreground">
-            Reply del lead
-          </summary>
-          <pre className="mt-1 whitespace-pre-wrap font-sans text-foreground/90 max-h-32 overflow-y-auto">
-            {c.reply_original}
-          </pre>
-        </details>
-      )}
+      {/* === Layout 2-cols en desktop, stacked en mobile === */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+        {/* Columna principal: thread + respuesta editable */}
+        <div className="space-y-3 min-w-0">
+          {/* Hilo completo de la conversación */}
+          <div>
+            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+              💬 Conversación
+            </h4>
+            <ConversationThread
+              smartleadLeadId={c.smartlead_lead_id}
+              snapshot={c.thread_snapshot}
+              leadEmail={c.lead_email}
+              defaultCompact
+            />
+          </div>
 
-      {/* Turn 1 propuesto (lo que se enviaría si dices Sí) */}
-      <div className="rounded-md border bg-card p-3 text-sm leading-relaxed whitespace-pre-wrap">
-        {c.turn_1_generated ?? "(sin Turn 1 generado)"}
+          {/* Respuesta propuesta (editable) */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                ✍️ Respuesta propuesta {isEdited && <span className="text-amber-600 normal-case">· editada</span>}
+              </h4>
+              {isEdited && (
+                <button
+                  type="button"
+                  onClick={() => setEdited(original)}
+                  className="text-[10px] underline text-muted-foreground hover:text-foreground"
+                >
+                  ↺ Revertir
+                </button>
+              )}
+            </div>
+            <Textarea
+              value={edited}
+              onChange={(e) => setEdited(e.target.value)}
+              rows={Math.max(6, Math.min(16, edited.split("\n").length + 1))}
+              className="font-sans text-sm leading-relaxed"
+              disabled={pending || disabled}
+            />
+          </div>
+
+          {/* Coaching panel — aparece cuando se edita o si lo abres manual */}
+          {(isEdited || coachOpen) && (
+            <div className="rounded-md border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-blue-900 dark:text-blue-200">
+                  🎓 Feedback al coach IA {isEdited && <span className="text-amber-700 dark:text-amber-300 normal-case">· requerido</span>}
+                </h4>
+                {!isEdited && (
+                  <button
+                    type="button"
+                    onClick={() => setCoachOpen(false)}
+                    className="text-[10px] underline text-muted-foreground"
+                  >
+                    Cerrar
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-blue-900/80 dark:text-blue-200/80">
+                Marca qué falló para que la próxima vez el prompt lo evite. Las
+                razones se guardan en <code>edit_reasons</code> y alimentan el
+                AI Coach.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {COACHING_REASONS.map((r) => {
+                  const active = reasons.includes(r);
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => toggleReason(r)}
+                      disabled={pending || disabled}
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                        active
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-background hover:bg-accent text-foreground"
+                      )}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
+              <Textarea
+                value={otherReason}
+                onChange={(e) => setOtherReason(e.target.value)}
+                placeholder="Otro motivo o detalle específico (opcional)…"
+                rows={2}
+                disabled={pending || disabled}
+                className="text-xs"
+              />
+            </div>
+          )}
+
+          {!isEdited && !coachOpen && (
+            <button
+              type="button"
+              onClick={() => setCoachOpen(true)}
+              className="text-[11px] underline text-muted-foreground hover:text-foreground"
+            >
+              🎓 Dejar feedback al coach sin editar
+            </button>
+          )}
+        </div>
+
+        {/* Columna lateral: HubSpot context */}
+        <div className="space-y-2 min-w-0">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            🏢 Contexto HubSpot
+          </h4>
+          <HubSpotLeadContextCard hubspotContactId={c.hubspot_contact_id} />
+          {c.setter_name && (
+            <div className="text-[11px] text-muted-foreground">
+              Setter: <span className="font-medium text-foreground">{c.setter_name}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Botones grandes Sí / No */}
-      <div className="flex gap-2 flex-wrap">
-        <Button
-          onClick={onApprove}
-          disabled={pending || disabled}
-          className="flex-1 h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
-        >
-          {pending ? "Enviando…" : "✅ Sí, enviar tal cual"}
-        </Button>
+      {/* === Botones de acción === */}
+      <div className="flex gap-2 flex-wrap border-t pt-3">
+        {!isEdited ? (
+          <Button
+            onClick={onApprove}
+            disabled={pending || disabled}
+            className="flex-1 h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+          >
+            {pending ? "Enviando…" : "✅ Sí, enviar tal cual"}
+          </Button>
+        ) : (
+          <Button
+            onClick={handleSendEdited}
+            disabled={pending || disabled || edited.trim().length === 0}
+            className="flex-1 h-10 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+            title={
+              reasons.length === 0 && !otherReason.trim()
+                ? "Considera marcar al menos una razón para entrenar al coach"
+                : "Enviar la versión editada"
+            }
+          >
+            {pending ? "Enviando editada…" : "✅ Enviar editada"}
+          </Button>
+        )}
         <Button
           onClick={onReject}
           disabled={pending || disabled}
