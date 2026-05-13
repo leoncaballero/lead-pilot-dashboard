@@ -13,14 +13,20 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTriageRouteImport } from './routes/_authenticated/triage'
+import { Route as AuthenticatedTrainingRouteImport } from './routes/_authenticated/training'
+import { Route as AuthenticatedSystemHealthRouteImport } from './routes/_authenticated/system-health'
+import { Route as AuthenticatedStrategiesRouteImport } from './routes/_authenticated/strategies'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedPromptsRouteImport } from './routes/_authenticated/prompts'
+import { Route as AuthenticatedPromptPerformanceRouteImport } from './routes/_authenticated/prompt-performance'
 import { Route as AuthenticatedPipelineRouteImport } from './routes/_authenticated/pipeline'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDeepReviewRouteImport } from './routes/_authenticated/deep-review'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedAutoSendMonitorRouteImport } from './routes/_authenticated/auto-send-monitor'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticated/activity'
+import { Route as AuthenticatedLeadEmailRouteImport } from './routes/_authenticated/lead.$email'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -41,6 +47,22 @@ const AuthenticatedTriageRoute = AuthenticatedTriageRouteImport.update({
   path: '/triage',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedTrainingRoute = AuthenticatedTrainingRouteImport.update({
+  id: '/training',
+  path: '/training',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSystemHealthRoute =
+  AuthenticatedSystemHealthRouteImport.update({
+    id: '/system-health',
+    path: '/system-health',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedStrategiesRoute = AuthenticatedStrategiesRouteImport.update({
+  id: '/strategies',
+  path: '/strategies',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -51,6 +73,12 @@ const AuthenticatedPromptsRoute = AuthenticatedPromptsRouteImport.update({
   path: '/prompts',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedPromptPerformanceRoute =
+  AuthenticatedPromptPerformanceRouteImport.update({
+    id: '/prompt-performance',
+    path: '/prompt-performance',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedPipelineRoute = AuthenticatedPipelineRouteImport.update({
   id: '/pipeline',
   path: '/pipeline',
@@ -71,6 +99,12 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAutoSendMonitorRoute =
+  AuthenticatedAutoSendMonitorRouteImport.update({
+    id: '/auto-send-monitor',
+    path: '/auto-send-monitor',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -81,32 +115,49 @@ const AuthenticatedActivityRoute = AuthenticatedActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedLeadEmailRoute = AuthenticatedLeadEmailRouteImport.update({
+  id: '/lead/$email',
+  path: '/lead/$email',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/activity': typeof AuthenticatedActivityRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/auto-send-monitor': typeof AuthenticatedAutoSendMonitorRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/deep-review': typeof AuthenticatedDeepReviewRoute
   '/history': typeof AuthenticatedHistoryRoute
   '/pipeline': typeof AuthenticatedPipelineRoute
+  '/prompt-performance': typeof AuthenticatedPromptPerformanceRoute
   '/prompts': typeof AuthenticatedPromptsRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/strategies': typeof AuthenticatedStrategiesRoute
+  '/system-health': typeof AuthenticatedSystemHealthRoute
+  '/training': typeof AuthenticatedTrainingRoute
   '/triage': typeof AuthenticatedTriageRoute
+  '/lead/$email': typeof AuthenticatedLeadEmailRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/activity': typeof AuthenticatedActivityRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
+  '/auto-send-monitor': typeof AuthenticatedAutoSendMonitorRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/deep-review': typeof AuthenticatedDeepReviewRoute
   '/history': typeof AuthenticatedHistoryRoute
   '/pipeline': typeof AuthenticatedPipelineRoute
+  '/prompt-performance': typeof AuthenticatedPromptPerformanceRoute
   '/prompts': typeof AuthenticatedPromptsRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/strategies': typeof AuthenticatedStrategiesRoute
+  '/system-health': typeof AuthenticatedSystemHealthRoute
+  '/training': typeof AuthenticatedTrainingRoute
   '/triage': typeof AuthenticatedTriageRoute
+  '/lead/$email': typeof AuthenticatedLeadEmailRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -115,13 +166,19 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/activity': typeof AuthenticatedActivityRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
+  '/_authenticated/auto-send-monitor': typeof AuthenticatedAutoSendMonitorRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/deep-review': typeof AuthenticatedDeepReviewRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
   '/_authenticated/pipeline': typeof AuthenticatedPipelineRoute
+  '/_authenticated/prompt-performance': typeof AuthenticatedPromptPerformanceRoute
   '/_authenticated/prompts': typeof AuthenticatedPromptsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/strategies': typeof AuthenticatedStrategiesRoute
+  '/_authenticated/system-health': typeof AuthenticatedSystemHealthRoute
+  '/_authenticated/training': typeof AuthenticatedTrainingRoute
   '/_authenticated/triage': typeof AuthenticatedTriageRoute
+  '/_authenticated/lead/$email': typeof AuthenticatedLeadEmailRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -130,26 +187,38 @@ export interface FileRouteTypes {
     | '/login'
     | '/activity'
     | '/analytics'
+    | '/auto-send-monitor'
     | '/dashboard'
     | '/deep-review'
     | '/history'
     | '/pipeline'
+    | '/prompt-performance'
     | '/prompts'
     | '/settings'
+    | '/strategies'
+    | '/system-health'
+    | '/training'
     | '/triage'
+    | '/lead/$email'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/activity'
     | '/analytics'
+    | '/auto-send-monitor'
     | '/dashboard'
     | '/deep-review'
     | '/history'
     | '/pipeline'
+    | '/prompt-performance'
     | '/prompts'
     | '/settings'
+    | '/strategies'
+    | '/system-health'
+    | '/training'
     | '/triage'
+    | '/lead/$email'
   id:
     | '__root__'
     | '/'
@@ -157,13 +226,19 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/activity'
     | '/_authenticated/analytics'
+    | '/_authenticated/auto-send-monitor'
     | '/_authenticated/dashboard'
     | '/_authenticated/deep-review'
     | '/_authenticated/history'
     | '/_authenticated/pipeline'
+    | '/_authenticated/prompt-performance'
     | '/_authenticated/prompts'
     | '/_authenticated/settings'
+    | '/_authenticated/strategies'
+    | '/_authenticated/system-health'
+    | '/_authenticated/training'
     | '/_authenticated/triage'
+    | '/_authenticated/lead/$email'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -202,6 +277,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTriageRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/training': {
+      id: '/_authenticated/training'
+      path: '/training'
+      fullPath: '/training'
+      preLoaderRoute: typeof AuthenticatedTrainingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/system-health': {
+      id: '/_authenticated/system-health'
+      path: '/system-health'
+      fullPath: '/system-health'
+      preLoaderRoute: typeof AuthenticatedSystemHealthRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/strategies': {
+      id: '/_authenticated/strategies'
+      path: '/strategies'
+      fullPath: '/strategies'
+      preLoaderRoute: typeof AuthenticatedStrategiesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -214,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/prompts'
       fullPath: '/prompts'
       preLoaderRoute: typeof AuthenticatedPromptsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/prompt-performance': {
+      id: '/_authenticated/prompt-performance'
+      path: '/prompt-performance'
+      fullPath: '/prompt-performance'
+      preLoaderRoute: typeof AuthenticatedPromptPerformanceRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/pipeline': {
@@ -244,6 +347,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/auto-send-monitor': {
+      id: '/_authenticated/auto-send-monitor'
+      path: '/auto-send-monitor'
+      fullPath: '/auto-send-monitor'
+      preLoaderRoute: typeof AuthenticatedAutoSendMonitorRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/analytics': {
       id: '/_authenticated/analytics'
       path: '/analytics'
@@ -258,31 +368,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedActivityRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/lead/$email': {
+      id: '/_authenticated/lead/$email'
+      path: '/lead/$email'
+      fullPath: '/lead/$email'
+      preLoaderRoute: typeof AuthenticatedLeadEmailRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
   AuthenticatedActivityRoute: typeof AuthenticatedActivityRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
+  AuthenticatedAutoSendMonitorRoute: typeof AuthenticatedAutoSendMonitorRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDeepReviewRoute: typeof AuthenticatedDeepReviewRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
   AuthenticatedPipelineRoute: typeof AuthenticatedPipelineRoute
+  AuthenticatedPromptPerformanceRoute: typeof AuthenticatedPromptPerformanceRoute
   AuthenticatedPromptsRoute: typeof AuthenticatedPromptsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedStrategiesRoute: typeof AuthenticatedStrategiesRoute
+  AuthenticatedSystemHealthRoute: typeof AuthenticatedSystemHealthRoute
+  AuthenticatedTrainingRoute: typeof AuthenticatedTrainingRoute
   AuthenticatedTriageRoute: typeof AuthenticatedTriageRoute
+  AuthenticatedLeadEmailRoute: typeof AuthenticatedLeadEmailRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedActivityRoute: AuthenticatedActivityRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
+  AuthenticatedAutoSendMonitorRoute: AuthenticatedAutoSendMonitorRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDeepReviewRoute: AuthenticatedDeepReviewRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
   AuthenticatedPipelineRoute: AuthenticatedPipelineRoute,
+  AuthenticatedPromptPerformanceRoute: AuthenticatedPromptPerformanceRoute,
   AuthenticatedPromptsRoute: AuthenticatedPromptsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedStrategiesRoute: AuthenticatedStrategiesRoute,
+  AuthenticatedSystemHealthRoute: AuthenticatedSystemHealthRoute,
+  AuthenticatedTrainingRoute: AuthenticatedTrainingRoute,
   AuthenticatedTriageRoute: AuthenticatedTriageRoute,
+  AuthenticatedLeadEmailRoute: AuthenticatedLeadEmailRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -297,3 +426,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
