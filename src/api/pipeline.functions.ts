@@ -24,6 +24,7 @@ export type PipelineStage =
 export type PipelineCard = {
   id: string;
   smartlead_lead_id: string | null;
+  campaign_id: string | null;
   hubspot_contact_id: string | null;
   lead_name: string | null;
   lead_email: string | null;
@@ -78,6 +79,7 @@ export const getPipelineKanban = createServerFn({ method: "GET" })
     type Row = {
       id: string;
       smartlead_lead_id: string | null;
+      campaign_id: string | null;
       hubspot_contact_id: string | null;
       lead_name: string | null;
       lead_email: string | null;
@@ -92,7 +94,7 @@ export const getPipelineKanban = createServerFn({ method: "GET" })
     };
     const params = new URLSearchParams({
       select:
-        "id,smartlead_lead_id,hubspot_contact_id,lead_name,lead_email,segmento,turn_type,patron,score,status,sdr_action,created_at,sent_at",
+        "id,smartlead_lead_id,campaign_id,hubspot_contact_id,lead_name,lead_email,segmento,turn_type,patron,score,status,sdr_action,created_at,sent_at",
       order: "created_at.desc.nullslast",
       limit: "500",
     });

@@ -340,7 +340,10 @@ function CaseDetailDialogBody({ c }: { c: HistoryCase }) {
 
       <div>
         <div className="text-xs font-medium uppercase text-muted-foreground mb-2">Conversación completa (Smartlead)</div>
-        <ConversationThread smartleadLeadId={c.smartlead_lead_id ?? null} />
+        <ConversationThread
+          smartleadLeadId={c.smartlead_lead_id ?? null}
+          campaignId={c.campaign_id ?? null}
+        />
       </div>
 
       {(c.turn_1_final || c.turn_1_generated) && (

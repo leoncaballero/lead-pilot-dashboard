@@ -60,7 +60,16 @@ async function smartleadGet<T>(path: string): Promise<T> {
 }
 
 export const getSmartleadThread = createServerFn({ method: "GET" })
-  .inputValidator((data: { smartlead_lead_id: string | number }) => data)
+  .inputValidator(
+    (data: {
+      smartlead_lead_id: string | number;
+      /** Si lo conocemos (lo guardamos en pipeline.campaign_id), lo pasamos para
+       *  evitar la ambigüedad de leads que están en varias campañas. Sin esto,
+       *  caemos al primer ACTIVE de /leads/{id}/campaigns — que puede ser una
+       *  campaña antigua y mostrar el thread equivocado. */
+      campaign_id?: string | number | null;
+    }) => data
+  )
   .handler(async ({ data }): Promise<SmartleadThread> => {
     const leadId = String(data.smartlead_lead_id);
     if (!leadId) {
@@ -68,16 +77,33 @@ export const getSmartleadThread = createServerFn({ method: "GET" })
     }
 
     try {
-      // 1. Resolver campaign_id
-      const campaigns = await smartleadGet<Array<{ id: number; status: string; name: string }>>(
-        `/leads/${encodeURIComponent(leadId)}/campaigns`
-      );
-      if (!Array.isArray(campaigns) || campaigns.length === 0) {
-        return { ok: false, campaign_id: null, campaign_name: null, lead_email: null, messages: [], error: "Lead no encontrado en ningun campaign" };
+      let campaignId: number;
+      let campaignName: string;
+
+      if (data.campaign_id !== null && data.campaign_id !== undefined && data.campaign_id !== "") {
+        // Camino preferente: usamos el campaign_id que tenemos guardado en pipeline.
+        campaignId = Number(data.campaign_id);
+        // Best-effort: traemos el name por UX, pero no bloqueamos si falla.
+        try {
+          const cinfo = await smartleadGet<{ name?: string }>(`/campaigns/${campaignId}`);
+          campaignName = cinfo?.name ?? String(campaignId);
+        } catch {
+          campaignName = String(campaignId);
+        }
+      } else {
+        // Fallback: resolver vía /leads/{id}/campaigns y coger el primer ACTIVE.
+        // Esto es ambiguo cuando el lead está en varias campañas — pasar
+        // campaign_id explícito siempre es preferible.
+        const campaigns = await smartleadGet<Array<{ id: number; status: string; name: string }>>(
+          `/leads/${encodeURIComponent(leadId)}/campaigns`
+        );
+        if (!Array.isArray(campaigns) || campaigns.length === 0) {
+          return { ok: false, campaign_id: null, campaign_name: null, lead_email: null, messages: [], error: "Lead no encontrado en ningun campaign" };
+        }
+        const active = campaigns.find((c) => c.status === "ACTIVE") ?? campaigns[0];
+        campaignId = active.id;
+        campaignName = active.name;
       }
-      const active = campaigns.find((c) => c.status === "ACTIVE") ?? campaigns[0];
-      const campaignId = active.id;
-      const campaignName = active.name;
 
       // 2. Fetch message history
       type HistoryResp = { history: SmartleadMessage[]; from?: string; to?: string };

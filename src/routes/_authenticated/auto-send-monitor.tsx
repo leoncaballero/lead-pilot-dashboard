@@ -513,6 +513,7 @@ function CandidateDetail({
               </h4>
               <ConversationThread
                 smartleadLeadId={c.smartlead_lead_id}
+                campaignId={c.campaign_id}
                 snapshot={c.thread_snapshot}
                 leadEmail={c.lead_email}
                 defaultCompact

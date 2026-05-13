@@ -29,6 +29,9 @@ export type TriageCase = {
   id: string;
   smartlead_lead_id?: string | null;
   smartlead_thread_id?: string | null;
+  /** campaign_id guardado en pipeline. Lo necesita ConversationThread para
+   *  desambiguar el thread Smartlead cuando el lead está en varias campañas. */
+  campaign_id?: string | null;
   hubspot_contact_id?: string | null;
   lead_name?: string | null;
   lead_email?: string | null;
