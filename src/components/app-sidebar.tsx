@@ -1,5 +1,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   LayoutDashboard,
   Inbox,
@@ -19,6 +21,8 @@ import {
   HeartPulse,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { getQuickGateCount } from "@/api/triage.functions";
 import {
   Sidebar,
   SidebarContent,
@@ -59,6 +63,7 @@ export function AppSidebar() {
   const isActive = (path: string) => currentPath === path;
   const navigate = useNavigate();
   const [searchEmail, setSearchEmail] = useState("");
+  const quickGateCount = useQuickGatePolling();
 
   function onSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,16 +78,28 @@ export function AppSidebar() {
 
   const renderItems = (items: typeof mainItems) => (
     <SidebarMenu>
-      {items.map((item) => (
-        <SidebarMenuItem key={item.url}>
-          <SidebarMenuButton asChild isActive={isActive(item.url)}>
-            <Link to={item.url} className="flex items-center gap-2">
-              <item.icon className="h-4 w-4" />
-              <span>{item.title}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ))}
+      {items.map((item) => {
+        const showBadge =
+          item.url === "/auto-send-monitor" && quickGateCount > 0;
+        return (
+          <SidebarMenuItem key={item.url}>
+            <SidebarMenuButton asChild isActive={isActive(item.url)}>
+              <Link to={item.url} className="flex items-center gap-2">
+                <item.icon className="h-4 w-4" />
+                <span className="flex-1">{item.title}</span>
+                {showBadge && (
+                  <Badge
+                    className="h-5 px-1.5 text-[10px] bg-emerald-600 hover:bg-emerald-600 group-data-[collapsible=icon]:hidden"
+                    title={`${quickGateCount} caso${quickGateCount === 1 ? "" : "s"} esperando tu Sí/No`}
+                  >
+                    {quickGateCount}
+                  </Badge>
+                )}
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
     </SidebarMenu>
   );
 
@@ -127,4 +144,57 @@ export function AppSidebar() {
       </SidebarContent>
     </Sidebar>
   );
+}
+
+/**
+ * Polling cada 30s del count de pending_quick_review. Cuando el count sube
+ * (nuevo caso entró), dispara un toast. Cuando baja (aprobado/rechazado),
+ * solo actualiza el badge.
+ *
+ * 30s es buen balance: notifica casi al instante (peor caso 30s de delay)
+ * sin spamear la DB. Si el usuario está activo en /auto-send-monitor su
+ * propio loader ya refresca cada 30s (staleTime), así que es consistente.
+ */
+function useQuickGatePolling(): number {
+  const fn = useServerFn(getQuickGateCount);
+  const [count, setCount] = useState(0);
+  const prev = useRef<number | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      try {
+        const r = await fn({ data: undefined as unknown as never });
+        if (cancelled) return;
+        const newCount = r.count;
+        if (prev.current !== null && newCount > prev.current) {
+          const delta = newCount - prev.current;
+          toast.success(
+            `🚪 ${delta} nuevo${delta === 1 ? "" : "s"} caso${delta === 1 ? "" : "s"} en quick-gate`,
+            {
+              description: "Esperando tu Sí/No en /auto-send-monitor",
+              action: {
+                label: "Ver",
+                onClick: () => navigate({ to: "/auto-send-monitor" }),
+              },
+              duration: 8000,
+            }
+          );
+        }
+        prev.current = newCount;
+        setCount(newCount);
+      } catch {
+        // Silenciar errores transitorios; el siguiente tick lo reintenta
+      }
+    }
+    void tick(); // primer fetch inmediato
+    const id = setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [fn, navigate]);
+
+  return count;
 }
