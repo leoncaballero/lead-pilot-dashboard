@@ -1642,8 +1642,11 @@ export const getAutoSendMonitor = createServerFn({ method: "GET" }).handler(
       const errores = Array.isArray(r.validation_output?.errores_criticos)
         ? r.validation_output!.errores_criticos!
         : [];
-      const passes = score !== null && score >= threshold && errores.length === 0;
-      if (!passes) continue;
+      // El status pending_quick_review YA fue determinado por el WF02 v2 con
+      // sus propios criterios (score>=90, errores=[], MEGA sin tienda). No
+      // re-filtramos aquí: si el WF02 v2 lo metió a quick_review, debe aparecer
+      // en el monitor para que el operador decida Sí/No. El threshold del
+      // generator (95) aplica al auto-send full, NO al quick-gate.
       candidates.push({
         pipeline_id: r.id,
         lead_email: r.lead_email,
