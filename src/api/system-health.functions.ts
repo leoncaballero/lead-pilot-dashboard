@@ -43,6 +43,11 @@ const MONITORED_WORKFLOWS: Array<{ id: string; label: string; description: strin
     label: "WF03 FU 4h",
     description: "Cron Follow-Up 4h",
   },
+  {
+    id: "RAVhnYHki4LmCUle",
+    label: "WF08",
+    description: "Auto-retry error_send — cron 5min reintenta envíos fallidos hasta 3 veces, alerta Slack al final",
+  },
 ];
 
 export type WorkflowErrorSample = {
