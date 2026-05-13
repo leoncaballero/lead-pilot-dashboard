@@ -502,6 +502,37 @@ export const getLeadTimeline = createServerFn({ method: "GET" })
     };
   });
 
+/**
+ * Counter ligero de casos en quick-gate (status='pending_quick_review').
+ * Pensado para polling cada 30s desde el sidebar — sin payloads grandes.
+ */
+export const getQuickGateCount = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ count: number; fetched_at: string }> => {
+    const params = new URLSearchParams({
+      status: "eq.pending_quick_review",
+      select: "id",
+      limit: "1",
+    });
+    // Pedimos PostgREST que devuelva el count exacto vía header Prefer
+    const { url, key } = getCreds();
+    const res = await fetch(`${url}/rest/v1/${TABLE}?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Prefer: "count=exact",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`getQuickGateCount failed: ${res.status}`);
+    }
+    // PostgREST devuelve Content-Range: "0-0/N" cuando Prefer: count=exact
+    const cr = res.headers.get("content-range") ?? "";
+    const total = cr.includes("/") ? parseInt(cr.split("/")[1], 10) || 0 : 0;
+    return { count: total, fetched_at: new Date().toISOString() };
+  }
+);
+
 export const getRealtimeConfig = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ url: string; anonKey: string } | null> => {
     const url = process.env.OUTBOUND_SUPABASE_URL;
