@@ -1,4 +1,4 @@
-import { createFileRoute, ErrorComponent, useRouter } from "@tanstack/react-router";
+import { createFileRoute, ErrorComponent, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -2242,6 +2242,16 @@ function CaseDetail({
 
           {/* Contexto HubSpot del lead — ayuda a juzgar si avanzar y cómo */}
           <HubSpotLeadContextCard hubspotContactId={c.hubspot_contact_id ?? null} />
+
+          {c.lead_email && (
+            <Link
+              to="/lead/$email"
+              params={{ email: encodeURIComponent(c.lead_email) }}
+              className="inline-flex items-center gap-1 text-[11px] underline text-muted-foreground hover:text-foreground"
+            >
+              🔍 Ver timeline completo de este lead
+            </Link>
+          )}
 
           {/* Clasificación manual de tienda + regenerar — útil cuando el detector
               automático se equivocó (ej. dominio comercial que no matcheó la regex). */}

@@ -1,4 +1,5 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   LayoutDashboard,
   Inbox,
@@ -14,7 +15,9 @@ import {
   Workflow,
   GraduationCap,
   Bot,
+  Search,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   Sidebar,
   SidebarContent,
@@ -52,6 +55,19 @@ const systemItems = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (path: string) => currentPath === path;
+  const navigate = useNavigate();
+  const [searchEmail, setSearchEmail] = useState("");
+
+  function onSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const v = searchEmail.trim().toLowerCase();
+    if (!v) return;
+    navigate({
+      to: "/lead/$email",
+      params: { email: encodeURIComponent(v) },
+    });
+    setSearchEmail("");
+  }
 
   const renderItems = (items: typeof mainItems) => (
     <SidebarMenu>
@@ -80,6 +96,18 @@ export function AppSidebar() {
             <span className="text-xs text-muted-foreground">Pipeline Control</span>
           </div>
         </Link>
+        <form onSubmit={onSearchSubmit} className="px-2 pb-2 group-data-[collapsible=icon]:hidden">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              type="email"
+              placeholder="Buscar lead por email…"
+              value={searchEmail}
+              onChange={(e) => setSearchEmail(e.target.value)}
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
+        </form>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

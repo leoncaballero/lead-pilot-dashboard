@@ -559,6 +559,15 @@ function CandidateRow({
         >
           Abrir en /triage
         </Link>
+        {c.lead_email && (
+          <Link
+            to="/lead/$email"
+            params={{ email: encodeURIComponent(c.lead_email) }}
+            className="self-center text-[11px] underline text-muted-foreground hover:text-foreground"
+          >
+            🔍 Timeline
+          </Link>
+        )}
       </div>
     </div>
   );
