@@ -8,6 +8,7 @@ import {
   type LeadTimelineRow,
 } from "@/api/triage.functions";
 import { HubSpotLeadContextCard } from "@/components/HubSpotLeadContext";
+import { LeadWebsiteAnalysisCard } from "@/components/LeadWebsiteAnalysisCard";
 
 export const Route = createFileRoute("/_authenticated/lead/$email")({
   loader: async ({ params }) =>
@@ -87,6 +88,7 @@ function Page() {
             Contexto HubSpot
           </h3>
           <HubSpotLeadContextCard hubspotContactId={data.hubspot_contact_id} />
+          {data.lead_email && <LeadWebsiteAnalysisCard leadEmail={data.lead_email} />}
           <div className="rounded-md border bg-card/60 p-3 text-[11px] space-y-1">
             <div>
               <span className="text-muted-foreground">smartlead_thread_id:</span>{" "}
