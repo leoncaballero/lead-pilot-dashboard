@@ -466,6 +466,10 @@
             {
               "fieldId": "previous_turn_id",
               "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.previous_turn_id }}"
+            },
+            {
+              "fieldId": "campaign_id",
+              "fieldValue": "={{ $('When Executed by Another Workflow').item.json.body.campaign_id || $('Load previous turn').item.json.campaign_id }}"
             }
           ]
         },
