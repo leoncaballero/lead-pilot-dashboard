@@ -1,0 +1,197 @@
+{
+  "active": false,
+  "connections": {
+    "Webhook EvoAPI": {
+      "main": [[{ "index": 0, "node": "Parse event", "type": "main" }]]
+    },
+    "Parse event": {
+      "main": [[{ "index": 0, "node": "Lookup row", "type": "main" }]]
+    },
+    "Lookup row": {
+      "main": [[{ "index": 0, "node": "Decide next state", "type": "main" }]]
+    },
+    "Decide next state": {
+      "main": [[{ "index": 0, "node": "Patch row partial", "type": "main" }]]
+    },
+    "Patch row partial": {
+      "main": [[{ "index": 0, "node": "Should send messages?", "type": "main" }]]
+    },
+    "Should send messages?": {
+      "main": [
+        [{ "index": 0, "node": "Build send items", "type": "main" }],
+        []
+      ]
+    },
+    "Build send items": {
+      "main": [[{ "index": 0, "node": "Send text", "type": "main" }]]
+    },
+    "Send text": {
+      "main": [[{ "index": 0, "node": "Patch row final", "type": "main" }]]
+    }
+  },
+  "description": "WF09b - Webhook handler para evento GROUP_PARTICIPANTS_UPDATE de EvoAPI. Si el grupo está en estado awaiting_join (en cl001_p007_precall_nurturing_wa_groups) y el participante que entró es el que faltaba, lanza los mensajes SOP guardados + actualiza state=messages_sent.",
+  "name": "GTM - 001 - WF09b - WhatsApp Group On Join",
+  "nodes": [
+    {
+      "id": "trg-webhook",
+      "name": "Webhook EvoAPI",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evoapi-group-participants-update",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "position": [-1320, 0],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "evoapi-group-participants-update"
+    },
+    {
+      "id": "parse-event",
+      "name": "Parse event",
+      "parameters": {
+        "jsCode": "// WF09b - Parse del evento de EvoAPI.\n//\n// EvoAPI v2 emite eventos con shape:\n//   { event: 'GROUP_PARTICIPANTS_UPDATE' | 'group.participants.update' | ...,\n//     instance: 'Leon-Test',\n//     data: { id: '<jid>', participants: ['<phone>@s.whatsapp.net', ...], action: 'add'|'remove'|... } }\n//\n// Sólo reaccionamos a action=add (alguien entró al grupo). Si no aplica,\n// devolvemos 0 items para parar el flujo limpio.\n\nconst body = $input.first().json.body || $input.first().json;\nconst event = (body.event || '').toLowerCase().replace(/\\./g, '_');\nconst data = body.data || {};\nconst action = (data.action || '').toLowerCase();\n\nif (event !== 'group_participants_update') return [];\nif (action !== 'add') return [];\n\nconst groupJid = data.id;\nif (!groupJid) return [];\n\n// Lista de phones (sin @s.whatsapp.net) que acaban de entrar\nconst joinedPhones = (data.participants || []).map(p => String(p).split('@')[0]).filter(Boolean);\nif (joinedPhones.length === 0) return [];\n\nreturn [{ json: { groupJid, joinedPhones, event_at: new Date().toISOString() } }];\n"
+      },
+      "position": [-1096, 0],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "lookup-row",
+      "name": "Lookup row",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "GET",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?group_jid=eq.{{ encodeURIComponent($json.groupJid) }}&state=eq.awaiting_join&select=*&limit=1",
+        "options": {}
+      },
+      "position": [-872, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "decide",
+      "name": "Decide next state",
+      "parameters": {
+        "jsCode": "// WF09b - Calcula nuevo pending/joined a partir de la row + los phones del evento.\n//\n// El nodo HTTP Request (Lookup row) hace auto-split de la respuesta array de\n// PostgREST: si hay 1 row, $input tiene 1 item; si hay 0 rows, tiene 0 items.\n// Si no hay row matching, devolvemos 0 items para parar el flujo limpio.\n\nconst items = $input.all();\nif (items.length === 0) return [];\nconst row = items[0]?.json;\nif (!row || !row.id) return [];\n\nconst ev = $('Parse event').first().json;\nconst nowIso = ev.event_at;\nconst justJoined = new Set(ev.joinedPhones);\n\nconst oldPending = row.pending_participants || [];\nconst joinedAt = { ...(row.joined_at || {}) };\n\nfor (const phone of justJoined) {\n  if (!joinedAt[phone]) joinedAt[phone] = nowIso;\n}\n\nconst newPending = oldPending.filter(p => !justJoined.has(p.phone));\nconst allJoinedNow = newPending.length === 0;\n\nreturn [{\n  json: {\n    row_id: row.id,\n    group_jid: row.group_jid,\n    update_pending: newPending,\n    update_joined_at: joinedAt,\n    all_joined_now: allJoinedNow,\n    messages: row.messages || [],\n  }\n}];\n"
+      },
+      "position": [-648, 0],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "patch-partial",
+      "name": "Patch row partial",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "PATCH",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $json.row_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { pending_participants: $json.update_pending, joined_at: $json.update_joined_at } }}",
+        "options": {}
+      },
+      "position": [-424, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "should-send",
+      "name": "Should send messages?",
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "all-joined",
+              "leftValue": "={{ $('Decide next state').first().json.all_joined_now }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [-200, 0],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "build-send-items",
+      "name": "Build send items",
+      "parameters": {
+        "jsCode": "// WF09b - Construye N items con los mensajes SOP guardados en la row para\n// que el siguiente nodo Send text los dispare al grupo.\n\nconst d = $('Decide next state').first().json;\nconst messages = d.messages || [];\nconst groupJid = d.group_jid;\n\nreturn messages.map((text, i) => ({\n  json: { number: groupJid, text, idx: i + 1 }\n}));\n"
+      },
+      "position": [24, 0],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
+      },
+      "id": "send-text",
+      "name": "Send text",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "=https://cioevolutionapiapp.nexau.es/message/sendText/Leon-Test",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $json.number, text: $json.text } }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [248, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "patch-final",
+      "name": "Patch row final",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "PATCH",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $('Decide next state').first().json.row_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { state: 'messages_sent', messages_sent_at: new Date().toISOString(), sent_results: $input.all().map((r, i) => ({ index: i+1, ok: !(r.json?.error), message_id: r.json?.key?.id || r.json?.id || null, error: r.json?.error ? (r.json.error.message || String(r.json.error)) : undefined })) } }}",
+        "options": {}
+      },
+      "position": [472, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
