@@ -132,7 +132,7 @@
         "url": "=https://cioevolutionapiapp.nexau.es/message/sendText/Leon-Test",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { number: $json.number, text: $json.text } }}",
+        "jsonBody": "={{ { number: $json.number, text: $json.text, linkPreview: false } }}",
         "options": {}
       },
       "onError": "continueRegularOutput",

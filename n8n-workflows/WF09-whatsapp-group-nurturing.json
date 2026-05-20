@@ -192,7 +192,7 @@
         "url": "={{ $('Validate payload').first().json.config.evoapi_base_url + '/message/sendText/' + $('Validate payload').first().json.config.evoapi_instance }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { number: $json.number, text: $json.text } }}",
+        "jsonBody": "={{ { number: $json.number, text: $json.text, linkPreview: false } }}",
         "options": {}
       },
       "onError": "continueRegularOutput",
