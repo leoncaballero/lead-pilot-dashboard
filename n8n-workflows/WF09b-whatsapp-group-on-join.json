@@ -2,124 +2,194 @@
   "active": false,
   "connections": {
     "Webhook EvoAPI": {
-      "main": [[{ "index": 0, "node": "Parse event", "type": "main" }]]
+      "main": [[{ "index": 0, "node": "Classify event", "type": "main" }]]
     },
-    "Parse event": {
-      "main": [[{ "index": 0, "node": "Lookup row", "type": "main" }]]
+    "Classify event": {
+      "main": [[{ "index": 0, "node": "Route by event", "type": "main" }]]
     },
-    "Lookup row": {
-      "main": [[{ "index": 0, "node": "Decide next state", "type": "main" }]]
-    },
-    "Decide next state": {
-      "main": [[{ "index": 0, "node": "Patch row partial", "type": "main" }]]
-    },
-    "Patch row partial": {
-      "main": [[{ "index": 0, "node": "Should send messages?", "type": "main" }]]
-    },
-    "Should send messages?": {
+    "Route by event": {
       "main": [
-        [{ "index": 0, "node": "Build send items", "type": "main" }],
+        [{ "index": 0, "node": "GPU: Lookup row", "type": "main" }],
+        [{ "index": 0, "node": "MU: Parse message", "type": "main" }],
         []
       ]
     },
-    "Build send items": {
-      "main": [[{ "index": 0, "node": "Send text", "type": "main" }]]
+    "GPU: Lookup row": {
+      "main": [[{ "index": 0, "node": "GPU: Decide next state", "type": "main" }]]
     },
-    "Send text": {
-      "main": [[{ "index": 0, "node": "Patch row final", "type": "main" }]]
+    "GPU: Decide next state": {
+      "main": [[{ "index": 0, "node": "GPU: Patch row partial", "type": "main" }]]
+    },
+    "GPU: Patch row partial": {
+      "main": [[{ "index": 0, "node": "GPU: Should send messages?", "type": "main" }]]
+    },
+    "GPU: Should send messages?": {
+      "main": [
+        [{ "index": 0, "node": "GPU: Build send items", "type": "main" }],
+        []
+      ]
+    },
+    "GPU: Build send items": {
+      "main": [[{ "index": 0, "node": "GPU: Send text", "type": "main" }]]
+    },
+    "GPU: Send text": {
+      "main": [[{ "index": 0, "node": "GPU: Patch row final", "type": "main" }]]
+    },
+    "MU: Parse message": {
+      "main": [[{ "index": 0, "node": "MU: Lookup group", "type": "main" }]]
+    },
+    "MU: Lookup group": {
+      "main": [[{ "index": 0, "node": "MU: Resolve sender", "type": "main" }]]
+    },
+    "MU: Resolve sender": {
+      "main": [[{ "index": 0, "node": "MU: Note exists?", "type": "main" }]]
+    },
+    "MU: Note exists?": {
+      "main": [
+        [{ "index": 0, "node": "MU: Get existing note", "type": "main" }],
+        [{ "index": 0, "node": "MU: Create note", "type": "main" }]
+      ]
+    },
+    "MU: Get existing note": {
+      "main": [[{ "index": 0, "node": "MU: Append + patch note", "type": "main" }]]
+    },
+    "MU: Create note": {
+      "main": [[{ "index": 0, "node": "MU: Patch row with note_id", "type": "main" }]]
     }
   },
-  "description": "WF09b - Webhook handler para evento GROUP_PARTICIPANTS_UPDATE de EvoAPI. Si el grupo está en estado awaiting_join (en cl001_p007_precall_nurturing_wa_groups) y el participante que entró es el que faltaba, lanza los mensajes SOP guardados + actualiza state=messages_sent.",
-  "name": "GTM - 001 - WF09b - WhatsApp Group On Join",
+  "description": "WF09b - Dispatcher de eventos EvoAPI. Webhook único en /webhook/evoapi-events, clasifica por event field y bifurca:\n- GROUP_PARTICIPANTS_UPDATE → si el lead/closer entró al grupo, envía mensajes SOP guardados (rama join).\n- MESSAGES_UPSERT → sincroniza el mensaje a HubSpot como Note agregada al contact del lead (rama notes, estilo TimelinesAI).",
+  "name": "GTM - 001 - WF09b - EvoAPI Events Handler",
   "nodes": [
     {
       "id": "trg-webhook",
       "name": "Webhook EvoAPI",
       "parameters": {
         "httpMethod": "POST",
-        "path": "evoapi-group-participants-update",
+        "path": "evoapi-events",
         "responseMode": "onReceived",
         "responseCode": 200,
         "options": {}
       },
-      "position": [-1320, 0],
+      "position": [-1900, 0],
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "webhookId": "evoapi-group-participants-update"
+      "webhookId": "evoapi-events"
     },
     {
-      "id": "parse-event",
-      "name": "Parse event",
+      "id": "classify-event",
+      "name": "Classify event",
       "parameters": {
-        "jsCode": "// WF09b - Parse del evento de EvoAPI.\n//\n// EvoAPI v2 emite eventos con shape:\n//   { event: 'GROUP_PARTICIPANTS_UPDATE' | 'group.participants.update' | ...,\n//     instance: 'Leon-Test',\n//     data: { id: '<jid>', participants: ['<phone>@s.whatsapp.net', ...], action: 'add'|'remove'|... } }\n//\n// Sólo reaccionamos a action=add (alguien entró al grupo). Si no aplica,\n// devolvemos 0 items para parar el flujo limpio.\n\nconst body = $input.first().json.body || $input.first().json;\nconst event = (body.event || '').toLowerCase().replace(/\\./g, '_');\nconst data = body.data || {};\nconst action = (data.action || '').toLowerCase();\n\nif (event !== 'group_participants_update') return [];\nif (action !== 'add') return [];\n\nconst groupJid = data.id;\nif (!groupJid) return [];\n\n// Lista de phones (sin @s.whatsapp.net) que acaban de entrar\nconst joinedPhones = (data.participants || []).map(p => String(p).split('@')[0]).filter(Boolean);\nif (joinedPhones.length === 0) return [];\n\nreturn [{ json: { groupJid, joinedPhones, event_at: new Date().toISOString() } }];\n"
+        "jsCode": "// Normaliza el shape del evento de EvoAPI para que las ramas downstream\n// puedan asumir un formato común.\n//\n// EvoAPI v2 emite con shape:\n//   { event: 'GROUP_PARTICIPANTS_UPDATE' | 'group.participants.update' | 'MESSAGES_UPSERT' | 'messages.upsert' | ...,\n//     instance, data: {...} }\n//\n// Output:\n//   { event_kind: 'group_participants_update' | 'messages_upsert' | 'other',\n//     raw: <body completo>, data: <body.data>, instance, event_at }\n\nconst body = $input.first().json.body || $input.first().json;\nconst raw_event = String(body.event || '').toLowerCase().replace(/[.-]/g, '_');\nlet event_kind = 'other';\nif (raw_event === 'group_participants_update') event_kind = 'group_participants_update';\nelse if (raw_event === 'messages_upsert') event_kind = 'messages_upsert';\n\nreturn [{\n  json: {\n    event_kind,\n    raw_event,\n    data: body.data || {},\n    instance: body.instance || null,\n    event_at: new Date().toISOString(),\n  }\n}];\n"
       },
-      "position": [-1096, 0],
+      "position": [-1676, 0],
       "type": "n8n-nodes-base.code",
       "typeVersion": 2
     },
     {
+      "id": "switch-event",
+      "name": "Route by event",
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "is-gpu",
+                    "leftValue": "={{ $json.event_kind }}",
+                    "rightValue": "group_participants_update",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "gpu"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "is-mu",
+                    "leftValue": "={{ $json.event_kind }}",
+                    "rightValue": "messages_upsert",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "mu"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "position": [-1452, 0],
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2
+    },
+
+    {
+      "id": "gpu-parse",
+      "name": "GPU: Lookup row",
       "credentials": {
         "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
       },
-      "id": "lookup-row",
-      "name": "Lookup row",
       "parameters": {
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "method": "GET",
-        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?group_jid=eq.{{ encodeURIComponent($json.groupJid) }}&state=eq.awaiting_join&select=*&limit=1",
+        "url": "={{ (function() {\n  const d = $json.data || {};\n  const action = String(d.action || '').toLowerCase();\n  if (action !== 'add') return 'https://example.invalid/skip';\n  const gid = d.id || '';\n  return 'https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?group_jid=eq.' + encodeURIComponent(gid) + '&state=eq.awaiting_join&select=*&limit=1';\n})() }}",
         "options": {}
       },
-      "position": [-872, 0],
+      "onError": "continueRegularOutput",
+      "position": [-1228, -300],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     },
     {
-      "id": "decide",
-      "name": "Decide next state",
+      "id": "gpu-decide",
+      "name": "GPU: Decide next state",
       "parameters": {
-        "jsCode": "// WF09b - Calcula nuevo pending/joined a partir de la row + los phones del evento.\n//\n// El nodo HTTP Request (Lookup row) hace auto-split de la respuesta array de\n// PostgREST: si hay 1 row, $input tiene 1 item; si hay 0 rows, tiene 0 items.\n// Si no hay row matching, devolvemos 0 items para parar el flujo limpio.\n\nconst items = $input.all();\nif (items.length === 0) return [];\nconst row = items[0]?.json;\nif (!row || !row.id) return [];\n\nconst ev = $('Parse event').first().json;\nconst nowIso = ev.event_at;\nconst justJoined = new Set(ev.joinedPhones);\n\nconst oldPending = row.pending_participants || [];\nconst joinedAt = { ...(row.joined_at || {}) };\n\nfor (const phone of justJoined) {\n  if (!joinedAt[phone]) joinedAt[phone] = nowIso;\n}\n\nconst newPending = oldPending.filter(p => !justJoined.has(p.phone));\nconst allJoinedNow = newPending.length === 0;\n\nreturn [{\n  json: {\n    row_id: row.id,\n    group_jid: row.group_jid,\n    update_pending: newPending,\n    update_joined_at: joinedAt,\n    all_joined_now: allJoinedNow,\n    messages: row.messages || [],\n  }\n}];\n"
+        "jsCode": "// Rama join — lógica existente conservada.\n// Si la URL anterior fue 'skip' (action != add), o no hay row, devolvemos 0.\n\nconst items = $input.all();\nif (items.length === 0) return [];\nconst row = items[0]?.json;\nif (!row || !row.id) return [];\n\nconst ev = $('Classify event').first().json;\nconst d = ev.data || {};\nconst joinedPhones = new Set((d.participants || []).map(p => String(p).split('@')[0]).filter(Boolean));\nif (joinedPhones.size === 0) return [];\n\nconst oldPending = row.pending_participants || [];\nconst joinedAt = { ...(row.joined_at || {}) };\nconst nowIso = ev.event_at;\nfor (const phone of joinedPhones) {\n  if (!joinedAt[phone]) joinedAt[phone] = nowIso;\n}\n\nconst newPending = oldPending.filter(p => !joinedPhones.has(p.phone));\nconst allJoinedNow = newPending.length === 0;\n\nreturn [{\n  json: {\n    row_id: row.id,\n    group_jid: row.group_jid,\n    update_pending: newPending,\n    update_joined_at: joinedAt,\n    all_joined_now: allJoinedNow,\n    messages: row.messages || [],\n  }\n}];\n"
       },
-      "position": [-648, 0],
+      "position": [-1004, -300],
       "type": "n8n-nodes-base.code",
       "typeVersion": 2
     },
     {
+      "id": "gpu-patch-partial",
+      "name": "GPU: Patch row partial",
       "credentials": {
         "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
       },
-      "id": "patch-partial",
-      "name": "Patch row partial",
       "parameters": {
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "method": "PATCH",
         "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $json.row_id }}",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Prefer", "value": "return=minimal" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "Prefer", "value": "return=minimal" }] },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { pending_participants: $json.update_pending, joined_at: $json.update_joined_at } }}",
         "options": {}
       },
-      "position": [-424, 0],
+      "position": [-780, -300],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     },
     {
-      "id": "should-send",
-      "name": "Should send messages?",
+      "id": "gpu-should-send",
+      "name": "GPU: Should send messages?",
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
           "conditions": [
             {
               "id": "all-joined",
-              "leftValue": "={{ $('Decide next state').first().json.all_joined_now }}",
+              "leftValue": "={{ $('GPU: Decide next state').first().json.all_joined_now }}",
               "rightValue": true,
               "operator": { "type": "boolean", "operation": "true", "singleValue": true }
             }
@@ -128,26 +198,26 @@
         },
         "options": {}
       },
-      "position": [-200, 0],
+      "position": [-556, -300],
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2
     },
     {
-      "id": "build-send-items",
-      "name": "Build send items",
+      "id": "gpu-build-send",
+      "name": "GPU: Build send items",
       "parameters": {
-        "jsCode": "// WF09b - Construye N items con los mensajes SOP guardados en la row para\n// que el siguiente nodo Send text los dispare al grupo.\n\nconst d = $('Decide next state').first().json;\nconst messages = d.messages || [];\nconst groupJid = d.group_jid;\n\nreturn messages.map((text, i) => ({\n  json: { number: groupJid, text, idx: i + 1 }\n}));\n"
+        "jsCode": "const d = $('GPU: Decide next state').first().json;\nconst messages = d.messages || [];\nconst groupJid = d.group_jid;\nreturn messages.map((text, i) => ({ json: { number: groupJid, text, idx: i + 1 } }));\n"
       },
-      "position": [24, 0],
+      "position": [-332, -300],
       "type": "n8n-nodes-base.code",
       "typeVersion": 2
     },
     {
+      "id": "gpu-send-text",
+      "name": "GPU: Send text",
       "credentials": {
         "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
       },
-      "id": "send-text",
-      "name": "Send text",
       "parameters": {
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
@@ -159,33 +229,172 @@
         "options": {}
       },
       "onError": "continueRegularOutput",
-      "position": [248, 0],
+      "position": [-108, -300],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     },
     {
+      "id": "gpu-patch-final",
+      "name": "GPU: Patch row final",
       "credentials": {
         "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
       },
-      "id": "patch-final",
-      "name": "Patch row final",
       "parameters": {
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "method": "PATCH",
-        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $('Decide next state').first().json.row_id }}",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $('GPU: Decide next state').first().json.row_id }}",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Prefer", "value": "return=minimal" }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "Prefer", "value": "return=minimal" }] },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { state: 'messages_sent', messages_sent_at: new Date().toISOString(), sent_results: $input.all().map((r, i) => ({ index: i+1, ok: !(r.json?.error), message_id: r.json?.key?.id || r.json?.id || null, error: r.json?.error ? (r.json.error.message || String(r.json.error)) : undefined })) } }}",
         "options": {}
       },
-      "position": [472, 0],
+      "position": [116, -300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+
+    {
+      "id": "mu-parse",
+      "name": "MU: Parse message",
+      "parameters": {
+        "jsCode": "// Rama MESSAGES_UPSERT - extrae datos relevantes del mensaje y filtra.\n// Solo nos interesan mensajes de GRUPO (@g.us) con contenido textual.\n\nconst ev = $('Classify event').first().json;\nconst d = ev.data || {};\nconst key = d.key || {};\nconst msg = d.message || {};\n\nconst remoteJid = key.remoteJid || '';\nif (!remoteJid.endsWith('@g.us')) return []; // solo grupos\n\n// Extraer texto del mensaje (varios shapes posibles)\nconst text = msg.conversation\n  || msg.extendedTextMessage?.text\n  || msg.imageMessage?.caption\n  || msg.videoMessage?.caption\n  || null;\nif (!text) return []; // ignoramos media sin caption, stickers, etc.\n\nconst fromMe = !!key.fromMe;\n// participantAlt suele tener el phone canónico con sufijo, key.participant tiene el @lid (id WhatsApp interno)\nconst participantPhone = String(key.participantAlt || '').split('@')[0] || null;\nconst pushName = d.pushName || '';\nconst messageId = key.id || null;\nconst tsRaw = d.messageTimestamp || 0;\n// EvoAPI manda timestamp en segundos\nconst tsMs = (typeof tsRaw === 'number' ? tsRaw : Number(tsRaw)) * 1000;\nconst tsIso = tsMs > 0 ? new Date(tsMs).toISOString() : new Date().toISOString();\n\nreturn [{\n  json: {\n    group_jid: remoteJid,\n    from_me: fromMe,\n    participant_phone: participantPhone,\n    push_name: pushName,\n    text,\n    message_id: messageId,\n    timestamp_iso: tsIso,\n  }\n}];\n"
+      },
+      "position": [-1228, 300],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "mu-lookup",
+      "name": "MU: Lookup group",
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "GET",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?group_jid=eq.{{ encodeURIComponent($json.group_jid) }}&select=id,group_jid,group_subject,lead_name,closer_name,expected_participants,hubspot_lead_id,hubspot_note_id&limit=1",
+        "options": {}
+      },
+      "position": [-1004, 300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "mu-resolve",
+      "name": "MU: Resolve sender",
+      "parameters": {
+        "jsCode": "// Combina row + parsed message + resuelve sender role.\n// HTTP Request auto-splittea la respuesta array de PostgREST.\n\nconst items = $input.all();\nif (items.length === 0) return []; // no row → no es nuestro grupo\nconst row = items[0]?.json;\nif (!row || !row.id || !row.hubspot_lead_id) return [];\n\nconst m = $('MU: Parse message').first().json;\nconst expected = row.expected_participants || [];\n\n// Determinar sender\nlet senderRole = 'unknown';\nlet senderName = m.push_name || 'desconocido';\nif (m.from_me) {\n  senderRole = 'setter';\n  senderName = 'SDR';\n} else if (m.participant_phone) {\n  const match = expected.find(p => p.phone === m.participant_phone);\n  if (match) {\n    senderRole = match.role;\n    senderName = match.name;\n  }\n}\n\n// Format de la línea para el body de la Note\n// '[DD/MM HH:MM] Sender (role): texto'\nconst dt = new Date(m.timestamp_iso);\nconst fmt = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(dt).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst stamp = `${fmt.day}/${fmt.month} ${fmt.hour}:${fmt.minute}`;\nconst line = `[${stamp}] ${senderName} (${senderRole}): ${m.text}`;\n\nreturn [{\n  json: {\n    row_id: row.id,\n    hubspot_lead_id: row.hubspot_lead_id,\n    hubspot_note_id: row.hubspot_note_id, // puede ser null si es el primer mensaje\n    group_subject: row.group_subject,\n    sender_name: senderName,\n    sender_role: senderRole,\n    text: m.text,\n    timestamp_iso: m.timestamp_iso,\n    line,\n  }\n}];\n"
+      },
+      "position": [-780, 300],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "mu-note-exists",
+      "name": "MU: Note exists?",
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "has-note",
+              "leftValue": "={{ $json.hubspot_note_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [-556, 300],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+
+    {
+      "id": "mu-get-note",
+      "name": "MU: Get existing note",
+      "credentials": {
+        "hubspotAppToken": { "id": "__HUBSPOT_APP_TOKEN_REDACTED__", "name": "C.io Token HubSpot" }
+      },
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "method": "GET",
+        "url": "=https://api.hubapi.com/crm/v3/objects/notes/{{ $json.hubspot_note_id }}?properties=hs_note_body",
+        "options": {}
+      },
+      "position": [-332, 200],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "mu-append-patch",
+      "name": "MU: Append + patch note",
+      "credentials": {
+        "hubspotAppToken": { "id": "__HUBSPOT_APP_TOKEN_REDACTED__", "name": "C.io Token HubSpot" }
+      },
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "method": "PATCH",
+        "url": "=https://api.hubapi.com/crm/v3/objects/notes/{{ $('MU: Resolve sender').first().json.hubspot_note_id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ properties: { hs_note_body: ($json.properties?.hs_note_body || '') + '\\n' + $('MU: Resolve sender').first().json.line } }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [-108, 200],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+
+    {
+      "id": "mu-create-note",
+      "name": "MU: Create note",
+      "credentials": {
+        "hubspotAppToken": { "id": "__HUBSPOT_APP_TOKEN_REDACTED__", "name": "C.io Token HubSpot" }
+      },
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "method": "POST",
+        "url": "=https://api.hubapi.com/crm/v3/objects/notes",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ properties: { hs_note_body: '💬 Conversación del grupo WhatsApp: ' + $json.group_subject + '\\n\\n' + $json.line, hs_timestamp: $json.timestamp_iso }, associations: [{ to: { id: $json.hubspot_lead_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] }] }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [-332, 400],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "mu-patch-row-note-id",
+      "name": "MU: Patch row with note_id",
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "PATCH",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $('MU: Resolve sender').first().json.row_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Prefer", "value": "return=minimal" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ hubspot_note_id: $json.id }) }}",
+        "options": {}
+      },
+      "position": [-108, 400],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     }
