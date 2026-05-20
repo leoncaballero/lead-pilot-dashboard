@@ -28,6 +28,17 @@
         [
           {
             "index": 0,
+            "node": "Set group picture",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Set group picture": {
+      "main": [
+        [
+          {
+            "index": 0,
             "node": "Build message items",
             "type": "main"
           }
@@ -92,7 +103,7 @@
       "id": "validate-payload",
       "name": "Validate payload",
       "parameters": {
-        "jsCode": "// WF09 v1 - Validación del payload + preparación de todos los derivados.\n//\n// Output: un único item con todo lo necesario para los nodos HTTP siguientes:\n//   - config: { evoapi_base_url, evoapi_instance }\n//   - group_subject, participants, video_url, segment\n//   - lead, closer (closer = null si modo \"sin closer\"), meeting\n//   - messages: array de strings (3 o 5 según closer)\n//\n// Las llamadas a Evolution API se hacen en nodos HTTP Request nativos (el\n// modo task runner del Code node no permite httpRequestWithAuthentication).\n\nconst EVOAPI_BASE_URL = 'https://cioevolutionapiapp.nexau.es';\nconst EVOAPI_INSTANCE = 'Leon-Test';\n\nconst VIDEO_BY_SEGMENT = {\n  genesis: 'https://privado.consultoria.io/nuestra-estrategia',\n  mega:    'https://ia.consultoria.io/proceso-en-detalle',\n};\n\nfunction normalizePhone(raw) {\n  if (!raw) return null;\n  const digits = String(raw).replace(/\\D/g, '');\n  if (digits.length < 8) return null;\n  return digits;\n}\n\nfunction fail(msg) {\n  throw new Error('WF09 payload error: ' + msg);\n}\n\nconst payload = $input.first().json.body || $input.first().json;\n\nconst required = ['lead_id', 'lead_name', 'lead_phone', 'lead_company', 'meeting_url', 'meeting_at', 'segment'];\nfor (const k of required) {\n  if (!payload[k]) fail('missing field ' + k);\n}\n\nconst lead_phone = normalizePhone(payload.lead_phone);\nif (!lead_phone) fail('lead_phone is not a valid E.164 number');\n\nlet closer = null;\nif (payload.closer_name || payload.closer_phone) {\n  if (!payload.closer_name || !payload.closer_phone) {\n    fail('closer_name and closer_phone must both be provided together (or both omitted)');\n  }\n  const closer_phone = normalizePhone(payload.closer_phone);\n  if (!closer_phone) fail('closer_phone is not a valid E.164 number');\n  closer = { name: payload.closer_name, phone: closer_phone };\n}\n\nconst segment = String(payload.segment).toLowerCase();\nif (!VIDEO_BY_SEGMENT[segment]) fail('segment must be genesis or mega, got ' + segment);\nconst video_url = VIDEO_BY_SEGMENT[segment];\n\nconst stakeholders = Array.isArray(payload.stakeholders) ? payload.stakeholders : [];\nconst stakeholder_phones = [];\nfor (const sh of stakeholders) {\n  const p = normalizePhone(sh.phone);\n  if (!p) fail('stakeholder phone invalid: ' + JSON.stringify(sh));\n  stakeholder_phones.push(p);\n}\n\nconst meetingDate = new Date(payload.meeting_at);\nif (isNaN(meetingDate.getTime())) fail('meeting_at is not a valid ISO date');\n\nconst fmtMadridParts = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit', year: 'numeric',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(meetingDate).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst dateStr = `${fmtMadridParts.day}/${fmtMadridParts.month}/${fmtMadridParts.year}`;\nconst timeStr = `${fmtMadridParts.hour}:${fmtMadridParts.minute}`;\nconst hourLabel = fmtMadridParts.hour + 'h';\nconst group_subject = `${payload.lead_company} x C.io - ${dateStr} a las ${hourLabel}`;\n\nconst participants = [lead_phone, ...stakeholder_phones];\nif (closer) participants.unshift(closer.phone);\n\nconst lead = { id: payload.lead_id, name: payload.lead_name, phone: lead_phone, company: payload.lead_company };\nconst meeting = { url: payload.meeting_url, at_iso: payload.meeting_at, date_madrid: dateStr, time_madrid: timeStr };\n\nconst messages = closer\n  ? [\n      `Hola ${lead.name}, ${closer.name}, os presento`,\n      `${lead.name} es el fundador de ${lead.company}`,\n      `${closer.name} es uno de nuestros consultores expertos en ecommerce`,\n      `Os dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, ${lead.name}, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ]\n  : [\n      `Hola ${lead.name} 👋`,\n      `Te dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ];\n\nreturn [{\n  json: {\n    config: { evoapi_base_url: EVOAPI_BASE_URL, evoapi_instance: EVOAPI_INSTANCE },\n    lead,\n    closer,\n    meeting,\n    segment,\n    video_url,\n    group_subject,\n    participants,\n    messages,\n  }\n}];\n"
+        "jsCode": "// WF09 v1 - Validación del payload + preparación de todos los derivados.\n//\n// Output: un único item con todo lo necesario para los nodos HTTP siguientes:\n//   - config: { evoapi_base_url, evoapi_instance }\n//   - group_subject, participants, video_url, segment\n//   - lead, closer (closer = null si modo \"sin closer\"), meeting\n//   - messages: array de strings (3 o 5 según closer)\n//\n// Las llamadas a Evolution API se hacen en nodos HTTP Request nativos (el\n// modo task runner del Code node no permite httpRequestWithAuthentication).\n\nconst EVOAPI_BASE_URL = 'https://cioevolutionapiapp.nexau.es';\nconst EVOAPI_INSTANCE = 'Leon-Test';\n\n// Foto de perfil corporativa de C.io. Se aplica a TODOS los grupos creados\n// por el workflow. Hosteada en Google Drive (link \"Anyone with the link\").\n// Si rotamos foto: subir nueva versión y actualizar este URL.\nconst GROUP_PICTURE_URL = 'https://drive.google.com/uc?export=download&id=1WRAzcFPSphrJCaEgPUWcMFCJh4TuIuup';\n\nconst VIDEO_BY_SEGMENT = {\n  genesis: 'https://privado.consultoria.io/nuestra-estrategia',\n  mega:    'https://ia.consultoria.io/proceso-en-detalle',\n};\n\nfunction normalizePhone(raw) {\n  if (!raw) return null;\n  const digits = String(raw).replace(/\\D/g, '');\n  if (digits.length < 8) return null;\n  return digits;\n}\n\nfunction fail(msg) {\n  throw new Error('WF09 payload error: ' + msg);\n}\n\nconst payload = $input.first().json.body || $input.first().json;\n\nconst required = ['lead_id', 'lead_name', 'lead_phone', 'lead_company', 'meeting_url', 'meeting_at', 'segment'];\nfor (const k of required) {\n  if (!payload[k]) fail('missing field ' + k);\n}\n\nconst lead_phone = normalizePhone(payload.lead_phone);\nif (!lead_phone) fail('lead_phone is not a valid E.164 number');\n\nlet closer = null;\nif (payload.closer_name || payload.closer_phone) {\n  if (!payload.closer_name || !payload.closer_phone) {\n    fail('closer_name and closer_phone must both be provided together (or both omitted)');\n  }\n  const closer_phone = normalizePhone(payload.closer_phone);\n  if (!closer_phone) fail('closer_phone is not a valid E.164 number');\n  closer = { name: payload.closer_name, phone: closer_phone };\n}\n\nconst segment = String(payload.segment).toLowerCase();\nif (!VIDEO_BY_SEGMENT[segment]) fail('segment must be genesis or mega, got ' + segment);\nconst video_url = VIDEO_BY_SEGMENT[segment];\n\nconst stakeholders = Array.isArray(payload.stakeholders) ? payload.stakeholders : [];\nconst stakeholder_phones = [];\nfor (const sh of stakeholders) {\n  const p = normalizePhone(sh.phone);\n  if (!p) fail('stakeholder phone invalid: ' + JSON.stringify(sh));\n  stakeholder_phones.push(p);\n}\n\nconst meetingDate = new Date(payload.meeting_at);\nif (isNaN(meetingDate.getTime())) fail('meeting_at is not a valid ISO date');\n\nconst fmtMadridParts = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit', year: 'numeric',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(meetingDate).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst dateStr = `${fmtMadridParts.day}/${fmtMadridParts.month}/${fmtMadridParts.year}`;\nconst timeStr = `${fmtMadridParts.hour}:${fmtMadridParts.minute}`;\nconst hourLabel = fmtMadridParts.hour + 'h';\nconst group_subject = `${payload.lead_company} x C.io - ${dateStr} a las ${hourLabel}`;\n\nconst participants = [lead_phone, ...stakeholder_phones];\nif (closer) participants.unshift(closer.phone);\n\nconst lead = { id: payload.lead_id, name: payload.lead_name, phone: lead_phone, company: payload.lead_company };\nconst meeting = { url: payload.meeting_url, at_iso: payload.meeting_at, date_madrid: dateStr, time_madrid: timeStr };\n\nconst messages = closer\n  ? [\n      `Hola ${lead.name}, ${closer.name}, os presento`,\n      `${lead.name} es el fundador de ${lead.company}`,\n      `${closer.name} es uno de nuestros consultores expertos en ecommerce`,\n      `Os dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, ${lead.name}, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ]\n  : [\n      `Hola ${lead.name} 👋`,\n      `Te dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ];\n\nreturn [{\n  json: {\n    config: { evoapi_base_url: EVOAPI_BASE_URL, evoapi_instance: EVOAPI_INSTANCE, group_picture_url: GROUP_PICTURE_URL },\n    lead,\n    closer,\n    meeting,\n    segment,\n    video_url,\n    group_subject,\n    participants,\n    messages,\n  }\n}];\n"
       },
       "position": [
         -576,
@@ -121,7 +132,34 @@
         "options": {}
       },
       "position": [
-        -352,
+        -464,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XDaiffOfa6HbE1lc",
+          "name": "EvoAPI Cion"
+        }
+      },
+      "id": "set-group-picture",
+      "name": "Set group picture",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $('Validate payload').first().json.config.evoapi_base_url + '/group/updateGroupPicture/' + $('Validate payload').first().json.config.evoapi_instance + '?groupJid=' + encodeURIComponent($json.id) }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { image: $('Validate payload').first().json.config.group_picture_url } }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [
+        -240,
         0
       ],
       "type": "n8n-nodes-base.httpRequest",
@@ -131,10 +169,10 @@
       "id": "build-messages",
       "name": "Build message items",
       "parameters": {
-        "jsCode": "// WF09 v1 - Toma la respuesta de Create group + los datos validados y produce\n// N items (uno por mensaje a enviar). Cada item lleva todo lo necesario para\n// que el siguiente nodo HTTP haga sendText sin más lookups.\n\nconst createResp = $input.first().json;\nconst validated = $('Validate payload').first().json;\n\nconst groupJid = createResp?.id || createResp?.groupJid || createResp?.group?.id;\nif (!groupJid) {\n  throw new Error('Create group: no groupJid in response: ' + JSON.stringify(createResp).slice(0, 500));\n}\n\nconst items = [];\nfor (let i = 0; i < validated.messages.length; i++) {\n  items.push({\n    json: {\n      config: validated.config,\n      group_jid: groupJid,\n      group_subject: validated.group_subject,\n      total: validated.messages.length,\n      index: i + 1,\n      text: validated.messages[i],\n    }\n  });\n}\nreturn items;\n"
+        "jsCode": "// WF09 v1 - Toma la respuesta de Create group + los datos validados y produce\n// N items (uno por mensaje a enviar). Cada item lleva todo lo necesario para\n// que el siguiente nodo HTTP haga sendText sin más lookups.\n//\n// NOTA: el nodo inmediatamente anterior es \"Set group picture\" (cuya response\n// es {update: success} y no nos sirve para nada aquí), por eso accedemos\n// explícitamente a \"Create group\" por nombre para sacar el groupJid.\n\nconst createResp = $('Create group').first().json;\nconst validated = $('Validate payload').first().json;\n\nconst groupJid = createResp?.id || createResp?.groupJid || createResp?.group?.id;\nif (!groupJid) {\n  throw new Error('Create group: no groupJid in response: ' + JSON.stringify(createResp).slice(0, 500));\n}\n\nconst items = [];\nfor (let i = 0; i < validated.messages.length; i++) {\n  items.push({\n    json: {\n      config: validated.config,\n      group_jid: groupJid,\n      group_subject: validated.group_subject,\n      total: validated.messages.length,\n      index: i + 1,\n      text: validated.messages[i],\n    }\n  });\n}\nreturn items;\n"
       },
       "position": [
-        -128,
+        -16,
         0
       ],
       "type": "n8n-nodes-base.code",
@@ -161,7 +199,7 @@
       },
       "onError": "continueRegularOutput",
       "position": [
-        96,
+        208,
         0
       ],
       "type": "n8n-nodes-base.httpRequest",
@@ -174,7 +212,7 @@
         "jsCode": "// WF09 v1 - Combina las N respuestas de Send text en un único response final.\n//\n// onError=continueRegularOutput en Send text hace que las llamadas que fallan\n// pasen como items con `error` en lugar de abortar el flujo. Aquí marcamos\n// cada índice como ok/no-ok y devolvemos un sent[] análogo al SOP original.\n\nconst responses = $input.all();\nconst builtItems = $('Build message items').all();\nconst validated = $('Validate payload').first().json;\n\nconst sent = [];\nfor (let i = 0; i < responses.length; i++) {\n  const r = responses[i];\n  const errObj = r.json?.error || r.error;\n  sent.push({\n    index: i + 1,\n    ok: !errObj,\n    text: builtItems[i]?.json?.text,\n    message_id: r.json?.key?.id || r.json?.id || null,\n    error: errObj ? (errObj.message || String(errObj)) : undefined,\n  });\n}\n\nconst groupJid = builtItems[0]?.json?.group_jid;\n\nreturn [{\n  json: {\n    ok: sent.length > 0 && sent.every(s => s.ok),\n    group_jid: groupJid,\n    group_subject: validated.group_subject,\n    lead_id: validated.lead.id,\n    meeting_at: validated.meeting.at_iso,\n    mode: validated.closer ? 'with_closer' : 'no_closer',\n    sent,\n  }\n}];\n"
       },
       "position": [
-        320,
+        432,
         0
       ],
       "type": "n8n-nodes-base.code",
@@ -189,7 +227,7 @@
         "responseBody": "={{ $json }}"
       },
       "position": [
-        544,
+        656,
         0
       ],
       "type": "n8n-nodes-base.respondToWebhook",
