@@ -46,15 +46,15 @@
     },
     "MU: Note exists?": {
       "main": [
-        [{ "index": 0, "node": "MU: Get existing note", "type": "main" }],
-        [{ "index": 0, "node": "MU: Create note", "type": "main" }]
+        [{ "index": 0, "node": "MU: Get existing communication", "type": "main" }],
+        [{ "index": 0, "node": "MU: Create communication", "type": "main" }]
       ]
     },
-    "MU: Get existing note": {
-      "main": [[{ "index": 0, "node": "MU: Append + patch note", "type": "main" }]]
+    "MU: Get existing communication": {
+      "main": [[{ "index": 0, "node": "MU: Append + patch communication", "type": "main" }]]
     },
-    "MU: Create note": {
-      "main": [[{ "index": 0, "node": "MU: Patch row with note_id", "type": "main" }]]
+    "MU: Create communication": {
+      "main": [[{ "index": 0, "node": "MU: Patch row with communication_id", "type": "main" }]]
     }
   },
   "description": "WF09b - Dispatcher de eventos EvoAPI. Webhook único en /webhook/evoapi-events, clasifica por event field y bifurca:\n- GROUP_PARTICIPANTS_UPDATE → si el lead/closer entró al grupo, envía mensajes SOP guardados (rama join).\n- MESSAGES_UPSERT → sincroniza el mensaje a HubSpot como Note agregada al contact del lead (rama notes, estilo TimelinesAI).",
@@ -287,7 +287,7 @@
       "id": "mu-resolve",
       "name": "MU: Resolve sender",
       "parameters": {
-        "jsCode": "// Combina row + parsed message + resuelve sender role.\n// HTTP Request auto-splittea la respuesta array de PostgREST.\n\nconst items = $input.all();\nif (items.length === 0) return []; // no row → no es nuestro grupo\nconst row = items[0]?.json;\nif (!row || !row.id || !row.hubspot_lead_id) return [];\n\nconst m = $('MU: Parse message').first().json;\nconst expected = row.expected_participants || [];\n\n// Determinar sender\nlet senderRole = 'unknown';\nlet senderName = m.push_name || 'desconocido';\nif (m.from_me) {\n  senderRole = 'setter';\n  senderName = 'SDR';\n} else if (m.participant_phone) {\n  const match = expected.find(p => p.phone === m.participant_phone);\n  if (match) {\n    senderRole = match.role;\n    senderName = match.name;\n  }\n}\n\n// Format de la línea para el body de la Note\n// '[DD/MM HH:MM] Sender (role): texto'\nconst dt = new Date(m.timestamp_iso);\nconst fmt = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(dt).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst stamp = `${fmt.day}/${fmt.month} ${fmt.hour}:${fmt.minute}`;\nconst line = `[${stamp}] ${senderName} (${senderRole}): ${m.text}`;\n\nreturn [{\n  json: {\n    row_id: row.id,\n    hubspot_lead_id: row.hubspot_lead_id,\n    hubspot_note_id: row.hubspot_note_id, // puede ser null si es el primer mensaje\n    group_subject: row.group_subject,\n    sender_name: senderName,\n    sender_role: senderRole,\n    text: m.text,\n    timestamp_iso: m.timestamp_iso,\n    line,\n  }\n}];\n"
+        "jsCode": "// Combina row + parsed message + resuelve sender role.\n// HTTP Request auto-splittea la respuesta array de PostgREST.\n// Output: header (HTML para arranque de Communication) + line (HTML del mensaje actual).\n// Cada línea va en <p> para separación visual y <strong> en sender + role.\n\nconst items = $input.all();\nif (items.length === 0) return []; // no row → no es nuestro grupo\nconst row = items[0]?.json;\nif (!row || !row.id || !row.hubspot_lead_id) return [];\n\nconst m = $('MU: Parse message').first().json;\nconst expected = row.expected_participants || [];\n\n// Determinar sender\nlet senderRole = 'unknown';\nlet senderName = m.push_name || 'desconocido';\nif (m.from_me) {\n  senderRole = 'setter';\n  senderName = 'SDR';\n} else if (m.participant_phone) {\n  const match = expected.find(p => p.phone === m.participant_phone);\n  if (match) {\n    senderRole = match.role;\n    senderName = match.name;\n  }\n}\n\n// Format del timestamp DD/MM HH:MM en hora Madrid\nconst dt = new Date(m.timestamp_iso);\nconst fmt = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(dt).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst stamp = `${fmt.day}/${fmt.month} ${fmt.hour}:${fmt.minute}`;\n\n// HTML-escape básico para prevenir que < > & del texto del usuario rompan el body\nfunction esc(s) {\n  return String(s ?? '').replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));\n}\n\n// HTML formatting que HubSpot renderiza en la timeline\nconst line = `<p>[${stamp}] <strong>${esc(senderName)} (${esc(senderRole)}):</strong> ${esc(m.text)}</p>`;\nconst header = `<p>💬 <strong>Grupo WhatsApp:</strong> ${esc(row.group_subject || '')}</p>`;\n\nreturn [{\n  json: {\n    row_id: row.id,\n    hubspot_lead_id: row.hubspot_lead_id,\n    hubspot_note_id: row.hubspot_note_id, // puede ser null si es el primer mensaje\n    group_subject: row.group_subject,\n    sender_name: senderName,\n    sender_role: senderRole,\n    text: m.text,\n    timestamp_iso: m.timestamp_iso,\n    header,\n    line,\n  }\n}];\n"
       },
       "position": [-780, 300],
       "type": "n8n-nodes-base.code",
@@ -317,8 +317,8 @@
     },
 
     {
-      "id": "mu-get-note",
-      "name": "MU: Get existing note",
+      "id": "mu-get-comm",
+      "name": "MU: Get existing communication",
       "credentials": {
         "hubspotAppToken": { "id": "__HUBSPOT_APP_TOKEN_REDACTED__", "name": "C.io Token HubSpot" }
       },
@@ -326,7 +326,7 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
         "method": "GET",
-        "url": "=https://api.hubapi.com/crm/v3/objects/notes/{{ $json.hubspot_note_id }}?properties=hs_note_body",
+        "url": "=https://api.hubapi.com/crm/v3/objects/communications/{{ $json.hubspot_note_id }}?properties=hs_communication_body",
         "options": {}
       },
       "position": [-332, 200],
@@ -335,7 +335,7 @@
     },
     {
       "id": "mu-append-patch",
-      "name": "MU: Append + patch note",
+      "name": "MU: Append + patch communication",
       "credentials": {
         "hubspotAppToken": { "id": "__HUBSPOT_APP_TOKEN_REDACTED__", "name": "C.io Token HubSpot" }
       },
@@ -343,10 +343,10 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
         "method": "PATCH",
-        "url": "=https://api.hubapi.com/crm/v3/objects/notes/{{ $('MU: Resolve sender').first().json.hubspot_note_id }}",
+        "url": "=https://api.hubapi.com/crm/v3/objects/communications/{{ $('MU: Resolve sender').first().json.hubspot_note_id }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ ({ properties: { hs_note_body: ($json.properties?.hs_note_body || '') + '\\n' + $('MU: Resolve sender').first().json.line } }) }}",
+        "jsonBody": "={{ ({ properties: { hs_communication_body: ($json.properties?.hs_communication_body || '') + $('MU: Resolve sender').first().json.line } }) }}",
         "options": {}
       },
       "onError": "continueRegularOutput",
@@ -356,8 +356,8 @@
     },
 
     {
-      "id": "mu-create-note",
-      "name": "MU: Create note",
+      "id": "mu-create-comm",
+      "name": "MU: Create communication",
       "credentials": {
         "hubspotAppToken": { "id": "__HUBSPOT_APP_TOKEN_REDACTED__", "name": "C.io Token HubSpot" }
       },
@@ -365,10 +365,10 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
         "method": "POST",
-        "url": "=https://api.hubapi.com/crm/v3/objects/notes",
+        "url": "=https://api.hubapi.com/crm/v3/objects/communications",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ ({ properties: { hs_note_body: '💬 Conversación del grupo WhatsApp: ' + $json.group_subject + '\\n\\n' + $json.line, hs_timestamp: $json.timestamp_iso }, associations: [{ to: { id: $json.hubspot_lead_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] }] }) }}",
+        "jsonBody": "={{ ({ properties: { hs_communication_channel_type: 'WHATS_APP', hs_communication_logged_from: 'CRM', hs_communication_body: $json.header + $json.line, hs_timestamp: $json.timestamp_iso }, associations: [{ to: { id: $json.hubspot_lead_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 81 }] }] }) }}",
         "options": {}
       },
       "onError": "continueRegularOutput",
@@ -377,8 +377,8 @@
       "typeVersion": 4.2
     },
     {
-      "id": "mu-patch-row-note-id",
-      "name": "MU: Patch row with note_id",
+      "id": "mu-patch-row-comm-id",
+      "name": "MU: Patch row with communication_id",
       "credentials": {
         "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
       },
