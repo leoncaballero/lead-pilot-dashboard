@@ -12,6 +12,7 @@ JSON exports of the productive n8n workflows under `Personal / CL001_P007_Data-I
 | `WF03-cron-fu-4h.json` | `5HQJUXNtkUOpuiNb` | Cron 4h follow-up |
 | `WF04-cron-booking-detector.json` | `epJZXeTq4HVKtsvC` | Cron 30min — detects HubSpot meetings, writes outcomes |
 | `WF08-auto-retry-error-send.json` | `RAVhnYHki4LmCUle` | Cron 5min — retries `error_send` rows, Slack alert at 3 fails |
+| `WF09-whatsapp-group-nurturing.json` | `sDMTEdFiM3p20yoE` | Webhook HubSpot → crea grupo WhatsApp via Evolution API self-hosted + envía 5 mensajes iniciales de nurturing (v1). Recordatorios víspera + `[HOY]` en v2. **Inactivo por defecto** hasta validación. |
 
 ## How to re-export
 

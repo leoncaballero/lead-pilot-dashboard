@@ -31,7 +31,8 @@ Y0k0uh5KX2TvDzFf|WF02-turn1-pipeline
 nwY6oykHHKZmg5TA|WF02b-turn2-generator
 epJZXeTq4HVKtsvC|WF04-cron-booking-detector
 5HQJUXNtkUOpuiNb|WF03-cron-fu-4h
-RAVhnYHki4LmCUle|WF08-auto-retry-error-send"
+RAVhnYHki4LmCUle|WF08-auto-retry-error-send
+sDMTEdFiM3p20yoE|WF09-whatsapp-group-nurturing"
 
 # Python helper does the fetch + sanitization + pretty-print
 python3 - <<PYEOF
