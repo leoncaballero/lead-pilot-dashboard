@@ -2,84 +2,40 @@
   "active": false,
   "connections": {
     "Webhook HubSpot": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Validate payload",
-            "type": "main"
-          }
-        ]
-      ]
+      "main": [[{ "index": 0, "node": "Validate payload", "type": "main" }]]
     },
     "Validate payload": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Create group",
-            "type": "main"
-          }
-        ]
-      ]
+      "main": [[{ "index": 0, "node": "Create group", "type": "main" }]]
     },
     "Create group": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Set group picture",
-            "type": "main"
-          }
-        ]
-      ]
+      "main": [[{ "index": 0, "node": "Set group picture", "type": "main" }]]
     },
     "Set group picture": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Build message items",
-            "type": "main"
-          }
-        ]
-      ]
+      "main": [[{ "index": 0, "node": "Wait for WA sync", "type": "main" }]]
     },
-    "Build message items": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Send text",
-            "type": "main"
-          }
-        ]
-      ]
+    "Wait for WA sync": {
+      "main": [[{ "index": 0, "node": "Get invite URL", "type": "main" }]]
+    },
+    "Get invite URL": {
+      "main": [[{ "index": 0, "node": "Get group participants", "type": "main" }]]
+    },
+    "Get group participants": {
+      "main": [[{ "index": 0, "node": "Decide messages vs invites", "type": "main" }]]
+    },
+    "Decide messages vs invites": {
+      "main": [[{ "index": 0, "node": "Send text", "type": "main" }]]
     },
     "Send text": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Aggregate",
-            "type": "main"
-          }
-        ]
-      ]
+      "main": [[{ "index": 0, "node": "Aggregate + persist", "type": "main" }]]
     },
-    "Aggregate": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Respond to HubSpot",
-            "type": "main"
-          }
-        ]
-      ]
+    "Aggregate + persist": {
+      "main": [[{ "index": 0, "node": "INSERT row", "type": "main" }]]
+    },
+    "INSERT row": {
+      "main": [[{ "index": 0, "node": "Respond to HubSpot", "type": "main" }]]
     }
   },
-  "description": "WF09 v1 - Crea grupo de WhatsApp via Evolution API self-hosted (cioevolutionapiapp.nexau.es) + envía los mensajes iniciales de nurturing. Trigger: webhook desde HubSpot Workflow tras cualificación del SDR. Auth: HTTP Header Auth (apikey). Closer es opcional: con closer → 5 mensajes SOP, sin closer → 3 mensajes simplificados. Recordatorios víspera y [HOY] llegan en v2.",
+  "description": "WF09 v2 - Crea grupo de WhatsApp via Evolution API self-hosted + nurturing inicial. Maneja el caso 'lead no entra al grupo por privacy' enviando invite 1-1 y persistiendo estado a Supabase (cl001_p007_precall_nurturing_wa_groups) para que WF09b (webhook EvoAPI on join) y WF09c (cron follow-up) completen el flujo. Trigger: webhook desde HubSpot Workflow.",
   "name": "GTM - 001 - WF09 - WhatsApp Group Nurturing",
   "nodes": [
     {
@@ -91,10 +47,7 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "position": [
-        -800,
-        0
-      ],
+      "position": [-1480, 0],
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "webhookId": "whatsapp-group-create"
@@ -103,21 +56,15 @@
       "id": "validate-payload",
       "name": "Validate payload",
       "parameters": {
-        "jsCode": "// WF09 v1 - Validación del payload + preparación de todos los derivados.\n//\n// Output: un único item con todo lo necesario para los nodos HTTP siguientes:\n//   - config: { evoapi_base_url, evoapi_instance }\n//   - group_subject, participants, video_url, segment\n//   - lead, closer (closer = null si modo \"sin closer\"), meeting\n//   - messages: array de strings (3 o 5 según closer)\n//\n// Las llamadas a Evolution API se hacen en nodos HTTP Request nativos (el\n// modo task runner del Code node no permite httpRequestWithAuthentication).\n\nconst EVOAPI_BASE_URL = 'https://cioevolutionapiapp.nexau.es';\nconst EVOAPI_INSTANCE = 'Leon-Test';\n\n// Foto de perfil corporativa de C.io. Se aplica a TODOS los grupos creados\n// por el workflow. Hosteada en Google Drive (link \"Anyone with the link\").\n// Si rotamos foto: subir nueva versión y actualizar este URL.\nconst GROUP_PICTURE_URL = 'https://drive.google.com/uc?export=download&id=1WRAzcFPSphrJCaEgPUWcMFCJh4TuIuup';\n\nconst VIDEO_BY_SEGMENT = {\n  genesis: 'https://privado.consultoria.io/nuestra-estrategia',\n  mega:    'https://ia.consultoria.io/proceso-en-detalle',\n};\n\nfunction normalizePhone(raw) {\n  if (!raw) return null;\n  const digits = String(raw).replace(/\\D/g, '');\n  if (digits.length < 8) return null;\n  return digits;\n}\n\nfunction fail(msg) {\n  throw new Error('WF09 payload error: ' + msg);\n}\n\nconst payload = $input.first().json.body || $input.first().json;\n\nconst required = ['lead_id', 'lead_name', 'lead_phone', 'lead_company', 'meeting_url', 'meeting_at', 'segment'];\nfor (const k of required) {\n  if (!payload[k]) fail('missing field ' + k);\n}\n\nconst lead_phone = normalizePhone(payload.lead_phone);\nif (!lead_phone) fail('lead_phone is not a valid E.164 number');\n\nlet closer = null;\nif (payload.closer_name || payload.closer_phone) {\n  if (!payload.closer_name || !payload.closer_phone) {\n    fail('closer_name and closer_phone must both be provided together (or both omitted)');\n  }\n  const closer_phone = normalizePhone(payload.closer_phone);\n  if (!closer_phone) fail('closer_phone is not a valid E.164 number');\n  closer = { name: payload.closer_name, phone: closer_phone };\n}\n\nconst segment = String(payload.segment).toLowerCase();\nif (!VIDEO_BY_SEGMENT[segment]) fail('segment must be genesis or mega, got ' + segment);\nconst video_url = VIDEO_BY_SEGMENT[segment];\n\nconst stakeholders = Array.isArray(payload.stakeholders) ? payload.stakeholders : [];\nconst stakeholder_phones = [];\nfor (const sh of stakeholders) {\n  const p = normalizePhone(sh.phone);\n  if (!p) fail('stakeholder phone invalid: ' + JSON.stringify(sh));\n  stakeholder_phones.push(p);\n}\n\nconst meetingDate = new Date(payload.meeting_at);\nif (isNaN(meetingDate.getTime())) fail('meeting_at is not a valid ISO date');\n\nconst fmtMadridParts = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit', year: 'numeric',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(meetingDate).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst dateStr = `${fmtMadridParts.day}/${fmtMadridParts.month}/${fmtMadridParts.year}`;\nconst timeStr = `${fmtMadridParts.hour}:${fmtMadridParts.minute}`;\nconst hourLabel = fmtMadridParts.hour + 'h';\nconst group_subject = `${payload.lead_company} x C.io - ${dateStr} a las ${hourLabel}`;\n\nconst participants = [lead_phone, ...stakeholder_phones];\nif (closer) participants.unshift(closer.phone);\n\nconst lead = { id: payload.lead_id, name: payload.lead_name, phone: lead_phone, company: payload.lead_company };\nconst meeting = { url: payload.meeting_url, at_iso: payload.meeting_at, date_madrid: dateStr, time_madrid: timeStr };\n\nconst messages = closer\n  ? [\n      `Hola ${lead.name}, ${closer.name}, os presento`,\n      `${lead.name} es el fundador de ${lead.company}`,\n      `${closer.name} es uno de nuestros consultores expertos en ecommerce`,\n      `Os dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, ${lead.name}, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ]\n  : [\n      `Hola ${lead.name} 👋`,\n      `Te dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ];\n\nreturn [{\n  json: {\n    config: { evoapi_base_url: EVOAPI_BASE_URL, evoapi_instance: EVOAPI_INSTANCE, group_picture_url: GROUP_PICTURE_URL },\n    lead,\n    closer,\n    meeting,\n    segment,\n    video_url,\n    group_subject,\n    participants,\n    messages,\n  }\n}];\n"
+        "jsCode": "// WF09 v2 - Validación del payload + preparación de derivados.\n//\n// expected_participants: lo que esperamos que esté en el grupo tras crearlo.\n//   Roles: lead | closer | stakeholder. NO incluye al SDR (es el creador y\n//   siempre está dentro automáticamente).\n//\n// messages: array de strings (3 ó 5) listos para enviar al grupo cuando todos\n//   los expected estén dentro. Se guardan a Supabase para que WF09b los pueda\n//   enviar si vienen tarde.\n\nconst EVOAPI_BASE_URL = 'https://cioevolutionapiapp.nexau.es';\nconst EVOAPI_INSTANCE = 'Leon-Test';\nconst GROUP_PICTURE_URL = 'https://drive.google.com/uc?export=download&id=1WRAzcFPSphrJCaEgPUWcMFCJh4TuIuup';\n\nconst VIDEO_BY_SEGMENT = {\n  genesis: 'https://privado.consultoria.io/nuestra-estrategia',\n  mega:    'https://ia.consultoria.io/proceso-en-detalle',\n};\n\nfunction normalizePhone(raw) {\n  if (!raw) return null;\n  const digits = String(raw).replace(/\\D/g, '');\n  if (digits.length < 8) return null;\n  return digits;\n}\n\nfunction fail(msg) { throw new Error('WF09 payload error: ' + msg); }\n\nconst payload = $input.first().json.body || $input.first().json;\nconst required = ['lead_id', 'lead_name', 'lead_phone', 'lead_company', 'meeting_url', 'meeting_at', 'segment'];\nfor (const k of required) { if (!payload[k]) fail('missing field ' + k); }\n\nconst lead_phone = normalizePhone(payload.lead_phone);\nif (!lead_phone) fail('lead_phone is not a valid E.164 number');\n\nlet closer = null;\nif (payload.closer_name || payload.closer_phone) {\n  if (!payload.closer_name || !payload.closer_phone) fail('closer_name and closer_phone must both be provided together');\n  const closer_phone = normalizePhone(payload.closer_phone);\n  if (!closer_phone) fail('closer_phone is not a valid E.164 number');\n  closer = { name: payload.closer_name, phone: closer_phone };\n}\n\nconst segment = String(payload.segment).toLowerCase();\nif (!VIDEO_BY_SEGMENT[segment]) fail('segment must be genesis or mega, got ' + segment);\nconst video_url = VIDEO_BY_SEGMENT[segment];\n\nconst stakeholders = Array.isArray(payload.stakeholders) ? payload.stakeholders : [];\nconst stakeholder_phones = [];\nfor (const sh of stakeholders) {\n  const p = normalizePhone(sh.phone);\n  if (!p) fail('stakeholder phone invalid: ' + JSON.stringify(sh));\n  stakeholder_phones.push(p);\n}\n\nconst meetingDate = new Date(payload.meeting_at);\nif (isNaN(meetingDate.getTime())) fail('meeting_at is not a valid ISO date');\nconst fmtMadridParts = new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'Europe/Madrid',\n  day: '2-digit', month: '2-digit', year: 'numeric',\n  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n}).formatToParts(meetingDate).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});\nconst dateStr = `${fmtMadridParts.day}/${fmtMadridParts.month}/${fmtMadridParts.year}`;\nconst hourLabel = fmtMadridParts.hour + 'h';\nconst group_subject = `${payload.lead_company} x C.io - ${dateStr} a las ${hourLabel}`;\n\nconst participants = [lead_phone, ...stakeholder_phones];\nif (closer) participants.unshift(closer.phone);\n\nconst expected_participants = [\n  { phone: lead_phone, name: payload.lead_name, role: 'lead' },\n  ...(closer ? [{ phone: closer.phone, name: closer.name, role: 'closer' }] : []),\n  ...stakeholders.map((sh, i) => ({ phone: stakeholder_phones[i], name: sh.name || ('stakeholder #' + (i+1)), role: 'stakeholder' })),\n];\n\nconst lead = { id: payload.lead_id, name: payload.lead_name, phone: lead_phone, company: payload.lead_company };\nconst meeting = { url: payload.meeting_url, at_iso: payload.meeting_at, date_madrid: dateStr };\n\nconst messages = closer\n  ? [\n      `Hola ${lead.name}, ${closer.name}, os presento`,\n      `${lead.name} es el fundador de ${lead.company}`,\n      `${closer.name} es uno de nuestros consultores expertos en ecommerce`,\n      `Os dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, ${lead.name}, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ]\n  : [\n      `Hola ${lead.name} 👋`,\n      `Te dejo por aquí el enlace para la reunión: ${meeting.url}`,\n      `Por cierto, te dejo por aquí el vídeo que te había comentado para que puedas verlo antes de la llamada ${video_url}`,\n    ];\n\nreturn [{\n  json: {\n    config: { evoapi_base_url: EVOAPI_BASE_URL, evoapi_instance: EVOAPI_INSTANCE, group_picture_url: GROUP_PICTURE_URL },\n    hubspot_lead_id: payload.lead_id,\n    lead,\n    closer,\n    meeting,\n    segment,\n    video_url,\n    group_subject,\n    participants,\n    expected_participants,\n    stakeholder_phones,\n    messages,\n  }\n}];\n"
       },
-      "position": [
-        -576,
-        0
-      ],
+      "position": [-1256, 0],
       "type": "n8n-nodes-base.code",
       "typeVersion": 2
     },
     {
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "XDaiffOfa6HbE1lc",
-          "name": "EvoAPI Cion"
-        }
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
       },
       "id": "create-group",
       "name": "Create group",
@@ -131,19 +78,13 @@
         "jsonBody": "={{ { subject: $json.group_subject, participants: $json.participants } }}",
         "options": {}
       },
-      "position": [
-        -464,
-        0
-      ],
+      "position": [-1032, 0],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     },
     {
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "XDaiffOfa6HbE1lc",
-          "name": "EvoAPI Cion"
-        }
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
       },
       "id": "set-group-picture",
       "name": "Set group picture",
@@ -158,32 +99,69 @@
         "options": {}
       },
       "onError": "continueRegularOutput",
-      "position": [
-        -240,
-        0
-      ],
+      "position": [-808, 0],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     },
     {
-      "id": "build-messages",
-      "name": "Build message items",
+      "id": "wait-wa-sync",
+      "name": "Wait for WA sync",
       "parameters": {
-        "jsCode": "// WF09 v1 - Toma la respuesta de Create group + los datos validados y produce\n// N items (uno por mensaje a enviar). Cada item lleva todo lo necesario para\n// que el siguiente nodo HTTP haga sendText sin más lookups.\n//\n// NOTA: el nodo inmediatamente anterior es \"Set group picture\" (cuya response\n// es {update: success} y no nos sirve para nada aquí), por eso accedemos\n// explícitamente a \"Create group\" por nombre para sacar el groupJid.\n\nconst createResp = $('Create group').first().json;\nconst validated = $('Validate payload').first().json;\n\nconst groupJid = createResp?.id || createResp?.groupJid || createResp?.group?.id;\nif (!groupJid) {\n  throw new Error('Create group: no groupJid in response: ' + JSON.stringify(createResp).slice(0, 500));\n}\n\nconst items = [];\nfor (let i = 0; i < validated.messages.length; i++) {\n  items.push({\n    json: {\n      config: validated.config,\n      group_jid: groupJid,\n      group_subject: validated.group_subject,\n      total: validated.messages.length,\n      index: i + 1,\n      text: validated.messages[i],\n    }\n  });\n}\nreturn items;\n"
+        "amount": 2,
+        "unit": "seconds"
       },
-      "position": [
-        -16,
-        0
-      ],
+      "position": [-584, 0],
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "wait-wa-sync-wf09"
+    },
+    {
+      "credentials": {
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
+      },
+      "id": "get-invite-url",
+      "name": "Get invite URL",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "GET",
+        "url": "={{ $('Validate payload').first().json.config.evoapi_base_url + '/group/inviteCode/' + $('Validate payload').first().json.config.evoapi_instance + '?groupJid=' + encodeURIComponent($('Create group').first().json.id) }}",
+        "options": {}
+      },
+      "position": [-360, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "credentials": {
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
+      },
+      "id": "get-group-participants",
+      "name": "Get group participants",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "GET",
+        "url": "={{ $('Validate payload').first().json.config.evoapi_base_url + '/group/findGroupInfos/' + $('Validate payload').first().json.config.evoapi_instance + '?groupJid=' + encodeURIComponent($('Create group').first().json.id) }}",
+        "options": {}
+      },
+      "position": [-136, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "decide",
+      "name": "Decide messages vs invites",
+      "parameters": {
+        "jsCode": "// WF09 v2 - Decisión: ¿todos dentro o algunos pendientes?\n//\n// Output: N items para el siguiente Send text. Si todos dentro → items son\n// los mensajes del SOP al grupo. Si falta alguien → items son invites 1-1\n// a cada pending. El campo `decision` marca el modo para que Aggregate sepa\n// qué state guardar y qué timestamp poblar.\n\nconst validated = $('Validate payload').first().json;\nconst groupResp = $('Create group').first().json;\nconst groupInfo = $('Get group participants').first().json;\nconst inviteResp = $('Get invite URL').first().json;\n\nconst groupJid = groupResp?.id;\nif (!groupJid) throw new Error('Decide: no groupJid');\n\n// inviteCode endpoint devuelve { inviteCode: '...', inviteUrl: 'https://chat.whatsapp.com/...' }\n// Tomamos inviteUrl si existe; fallback a construirla desde inviteCode.\nlet inviteUrl = inviteResp?.inviteUrl || inviteResp?.invite_url;\nif (!inviteUrl && inviteResp?.inviteCode) inviteUrl = 'https://chat.whatsapp.com/' + inviteResp.inviteCode;\nif (!inviteUrl) throw new Error('Decide: no invite URL in response: ' + JSON.stringify(inviteResp).slice(0,300));\n\n// Sacar lista de phones que ESTÁN dentro (excluyendo al SDR creador).\n// groupInfo.participants[].phoneNumber tiene formato '34XXX@s.whatsapp.net'.\nconst joinedPhones = new Set();\nfor (const p of (groupInfo?.participants || [])) {\n  const pn = (p.phoneNumber || '').split('@')[0];\n  if (pn) joinedPhones.add(pn);\n}\n\n// Pending = expected pero NO joined\nconst pending = validated.expected_participants.filter(ep => !joinedPhones.has(ep.phone));\nconst joinedAt = {};\nconst now = new Date().toISOString();\nfor (const ep of validated.expected_participants) {\n  if (joinedPhones.has(ep.phone)) joinedAt[ep.phone] = now;\n}\n\nconst decision = pending.length === 0 ? 'all_present' : 'pending_join';\n\nlet items;\nif (decision === 'all_present') {\n  // Modo happy: mandar mensajes SOP al groupJid\n  items = validated.messages.map((text, i) => ({\n    json: {\n      _meta: { decision, group_jid: groupJid, invite_url: inviteUrl, joined_at: joinedAt, pending },\n      number: groupJid,\n      text,\n      idx: i + 1,\n    }\n  }));\n} else {\n  // Modo pending: mandar invite 1-1 a cada uno\n  const sdrIsCreator = true; // el SDR es el dueño de la sesión EvoAPI\n  items = pending.map((ep, i) => {\n    const greeting = ep.role === 'lead'\n      ? `Hola ${ep.name}, soy del equipo de Consultoría.io. Como tu configuración de privacidad no me permitió añadirte directamente al grupo de la llamada, te paso el enlace para que entres tú mismo y nos pongamos en marcha: ${inviteUrl}`\n      : `Hola ${ep.name}, no he podido añadirte directamente al grupo del lead (${validated.lead.name}, ${validated.lead.company}). Entra aquí: ${inviteUrl}`;\n    return {\n      json: {\n        _meta: { decision, group_jid: groupJid, invite_url: inviteUrl, joined_at: joinedAt, pending },\n        number: ep.phone,\n        text: greeting,\n        idx: i + 1,\n      }\n    };\n  });\n}\n\nreturn items;\n"
+      },
+      "position": [88, 0],
       "type": "n8n-nodes-base.code",
       "typeVersion": 2
     },
     {
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "XDaiffOfa6HbE1lc",
-          "name": "EvoAPI Cion"
-        }
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
       },
       "id": "send-text",
       "name": "Send text",
@@ -191,32 +169,65 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "method": "POST",
-        "url": "={{ $json.config.evoapi_base_url + '/message/sendText/' + $json.config.evoapi_instance }}",
+        "url": "={{ $('Validate payload').first().json.config.evoapi_base_url + '/message/sendText/' + $('Validate payload').first().json.config.evoapi_instance }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { number: $json.group_jid, text: $json.text } }}",
+        "jsonBody": "={{ { number: $json.number, text: $json.text } }}",
         "options": {}
       },
       "onError": "continueRegularOutput",
-      "position": [
-        208,
-        0
-      ],
+      "position": [312, 0],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
     },
     {
-      "id": "aggregate",
-      "name": "Aggregate",
+      "id": "aggregate-persist",
+      "name": "Aggregate + persist",
       "parameters": {
-        "jsCode": "// WF09 v1 - Combina las N respuestas de Send text en un único response final.\n//\n// onError=continueRegularOutput en Send text hace que las llamadas que fallan\n// pasen como items con `error` en lugar de abortar el flujo. Aquí marcamos\n// cada índice como ok/no-ok y devolvemos un sent[] análogo al SOP original.\n\nconst responses = $input.all();\nconst builtItems = $('Build message items').all();\nconst validated = $('Validate payload').first().json;\n\nconst sent = [];\nfor (let i = 0; i < responses.length; i++) {\n  const r = responses[i];\n  const errObj = r.json?.error || r.error;\n  sent.push({\n    index: i + 1,\n    ok: !errObj,\n    text: builtItems[i]?.json?.text,\n    message_id: r.json?.key?.id || r.json?.id || null,\n    error: errObj ? (errObj.message || String(errObj)) : undefined,\n  });\n}\n\nconst groupJid = builtItems[0]?.json?.group_jid;\n\nreturn [{\n  json: {\n    ok: sent.length > 0 && sent.every(s => s.ok),\n    group_jid: groupJid,\n    group_subject: validated.group_subject,\n    lead_id: validated.lead.id,\n    meeting_at: validated.meeting.at_iso,\n    mode: validated.closer ? 'with_closer' : 'no_closer',\n    sent,\n  }\n}];\n"
+        "jsCode": "// WF09 v2 - Combina respuestas de Send text + prepara la row para INSERT.\n//\n// Output: un único item con todos los campos que el siguiente nodo Supabase\n// va a meter en cl001_p007_precall_nurturing_wa_groups. State depende de la\n// decisión: messages_sent si modo all_present, awaiting_join si pending_join.\n\nconst responses = $input.all();\nconst built = $('Decide messages vs invites').all();\nconst validated = $('Validate payload').first().json;\nconst meta = built[0]?.json?._meta || {};\nconst { decision, group_jid, invite_url, joined_at, pending } = meta;\n\nconst sent = [];\nfor (let i = 0; i < responses.length; i++) {\n  const r = responses[i];\n  const errObj = r.json?.error || r.error;\n  sent.push({\n    index: i + 1,\n    ok: !errObj,\n    target: built[i]?.json?.number,\n    text_preview: (built[i]?.json?.text || '').slice(0, 80),\n    message_id: r.json?.key?.id || r.json?.id || null,\n    error: errObj ? (errObj.message || String(errObj)) : undefined,\n  });\n}\n\nconst nowIso = new Date().toISOString();\nconst state = decision === 'all_present' ? 'messages_sent' : 'awaiting_join';\n\n// Stakeholder phones simple list para fácil query\nconst stakeholderPhones = validated.expected_participants\n  .filter(p => p.role === 'stakeholder')\n  .map(p => p.phone);\n\n// Row a insertar — los campos JSONB se serializan abajo en el nodo Supabase\nconst row = {\n  hubspot_lead_id: validated.hubspot_lead_id,\n  group_jid,\n  group_subject: validated.group_subject,\n  invite_url,\n  lead_phone: validated.lead.phone,\n  lead_name: validated.lead.name,\n  lead_company: validated.lead.company,\n  closer_phone: validated.closer?.phone || null,\n  closer_name: validated.closer?.name || null,\n  stakeholder_phones: stakeholderPhones,\n  expected_participants: validated.expected_participants,\n  pending_participants: pending,\n  joined_at,\n  meeting_url: validated.meeting.url,\n  meeting_at: validated.meeting.at_iso,\n  segment: validated.segment,\n  video_url: validated.video_url,\n  messages: validated.messages,\n  state,\n  messages_sent_at: state === 'messages_sent' ? nowIso : null,\n  sent_results: state === 'messages_sent' ? sent : null,\n  invite_sent_at: state === 'awaiting_join' ? nowIso : null,\n};\n\nreturn [{\n  json: {\n    // Para el INSERT\n    ...row,\n    // Para el response al webhook + observabilidad\n    _response: {\n      ok: sent.length > 0 && sent.every(s => s.ok),\n      decision,\n      state,\n      group_jid,\n      group_subject: validated.group_subject,\n      invite_url,\n      pending: pending.map(p => ({ phone: p.phone, name: p.name, role: p.role })),\n      sent,\n    }\n  }\n}];\n"
       },
-      "position": [
-        432,
-        0
-      ],
+      "position": [536, 0],
       "type": "n8n-nodes-base.code",
       "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "insert-row",
+      "name": "INSERT row",
+      "parameters": {
+        "tableId": "cl001_p007_precall_nurturing_wa_groups",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "hubspot_lead_id", "fieldValue": "={{ $json.hubspot_lead_id }}" },
+            { "fieldId": "group_jid", "fieldValue": "={{ $json.group_jid }}" },
+            { "fieldId": "group_subject", "fieldValue": "={{ $json.group_subject }}" },
+            { "fieldId": "invite_url", "fieldValue": "={{ $json.invite_url }}" },
+            { "fieldId": "lead_phone", "fieldValue": "={{ $json.lead_phone }}" },
+            { "fieldId": "lead_name", "fieldValue": "={{ $json.lead_name }}" },
+            { "fieldId": "lead_company", "fieldValue": "={{ $json.lead_company }}" },
+            { "fieldId": "closer_phone", "fieldValue": "={{ $json.closer_phone }}" },
+            { "fieldId": "closer_name", "fieldValue": "={{ $json.closer_name }}" },
+            { "fieldId": "stakeholder_phones", "fieldValue": "={{ $json.stakeholder_phones }}" },
+            { "fieldId": "expected_participants", "fieldValue": "={{ $json.expected_participants }}" },
+            { "fieldId": "pending_participants", "fieldValue": "={{ $json.pending_participants }}" },
+            { "fieldId": "joined_at", "fieldValue": "={{ $json.joined_at }}" },
+            { "fieldId": "meeting_url", "fieldValue": "={{ $json.meeting_url }}" },
+            { "fieldId": "meeting_at", "fieldValue": "={{ $json.meeting_at }}" },
+            { "fieldId": "segment", "fieldValue": "={{ $json.segment }}" },
+            { "fieldId": "video_url", "fieldValue": "={{ $json.video_url }}" },
+            { "fieldId": "messages", "fieldValue": "={{ $json.messages }}" },
+            { "fieldId": "state", "fieldValue": "={{ $json.state }}" },
+            { "fieldId": "messages_sent_at", "fieldValue": "={{ $json.messages_sent_at }}" },
+            { "fieldId": "sent_results", "fieldValue": "={{ $json.sent_results }}" },
+            { "fieldId": "invite_sent_at", "fieldValue": "={{ $json.invite_sent_at }}" }
+          ]
+        }
+      },
+      "position": [760, 0],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
     },
     {
       "id": "webhook-respond",
@@ -224,12 +235,9 @@
       "parameters": {
         "options": {},
         "respondWith": "json",
-        "responseBody": "={{ $json }}"
+        "responseBody": "={{ $('Aggregate + persist').first().json._response }}"
       },
-      "position": [
-        656,
-        0
-      ],
+      "position": [984, 0],
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1
     }

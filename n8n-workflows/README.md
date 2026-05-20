@@ -12,7 +12,9 @@ JSON exports of the productive n8n workflows under `Personal / CL001_P007_Data-I
 | `WF03-cron-fu-4h.json` | `5HQJUXNtkUOpuiNb` | Cron 4h follow-up |
 | `WF04-cron-booking-detector.json` | `epJZXeTq4HVKtsvC` | Cron 30min — detects HubSpot meetings, writes outcomes |
 | `WF08-auto-retry-error-send.json` | `RAVhnYHki4LmCUle` | Cron 5min — retries `error_send` rows, Slack alert at 3 fails |
-| `WF09-whatsapp-group-nurturing.json` | `sDMTEdFiM3p20yoE` | Webhook HubSpot → crea grupo WhatsApp via Evolution API self-hosted + envía 5 mensajes iniciales de nurturing (v1). Recordatorios víspera + `[HOY]` en v2. **Inactivo por defecto** hasta validación. |
+| `WF09-whatsapp-group-nurturing.json` | `sDMTEdFiM3p20yoE` | Webhook HubSpot → crea grupo WhatsApp via Evolution API + foto + envía mensajes SOP o invite 1-1 si lead/closer no entraron. Persiste estado en `cl001_p007_precall_nurturing_wa_groups`. **Inactivo** hasta validación. |
+| `WF09b-whatsapp-group-on-join.json` | `Edym4K7xzDh1J0K5` | Webhook EvoAPI `GROUP_PARTICIPANTS_UPDATE` → si era un grupo en `awaiting_join` y entró el último pending, envía los mensajes SOP guardados + marca `messages_sent`. **Inactivo** hasta validación. |
+| `WF09c-whatsapp-group-followup-cron.json` | `JJqg4f5pAFhhA9j0` | Cron 30min sobre rows `awaiting_join`. 4h → re-invite 1-1. 24h → Slack al SDR. 72h → marca `failed_no_join_72h` + Slack final. **Inactivo** hasta validación. |
 
 ## How to re-export
 

@@ -1,0 +1,252 @@
+{
+  "active": false,
+  "connections": {
+    "Every 30 min": {
+      "main": [[{ "index": 0, "node": "Fetch awaiting_join rows", "type": "main" }]]
+    },
+    "Fetch awaiting_join rows": {
+      "main": [
+        [
+          { "index": 0, "node": "Filter 4h reinvite", "type": "main" },
+          { "index": 0, "node": "Filter 24h Slack", "type": "main" },
+          { "index": 0, "node": "Filter 72h failed", "type": "main" }
+        ]
+      ]
+    },
+    "Filter 4h reinvite": {
+      "main": [[{ "index": 0, "node": "Patch 4h timestamp", "type": "main" }]]
+    },
+    "Patch 4h timestamp": {
+      "main": [[{ "index": 0, "node": "Expand pending phones", "type": "main" }]]
+    },
+    "Expand pending phones": {
+      "main": [[{ "index": 0, "node": "Send 4h invite", "type": "main" }]]
+    },
+    "Filter 24h Slack": {
+      "main": [[{ "index": 0, "node": "Patch 24h timestamp", "type": "main" }]]
+    },
+    "Patch 24h timestamp": {
+      "main": [[{ "index": 0, "node": "Send 24h Slack alert", "type": "main" }]]
+    },
+    "Filter 72h failed": {
+      "main": [[{ "index": 0, "node": "Patch state failed", "type": "main" }]]
+    },
+    "Patch state failed": {
+      "main": [[{ "index": 0, "node": "Send 72h Slack alert", "type": "main" }]]
+    }
+  },
+  "description": "WF09c - Cron 30min que procesa awaiting_join rows en cl001_p007_precall_nurturing_wa_groups y dispara follow-ups: re-invitación 1-1 a las 4h, alerta Slack al SDR a las 24h, marca failed_no_join_72h + Slack final a las 72h. Idempotente via timestamps en la row.",
+  "name": "GTM - 001 - WF09c - WhatsApp Group Follow-up Cron",
+  "nodes": [
+    {
+      "id": "trg-cron",
+      "name": "Every 30 min",
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 30 }]
+        }
+      },
+      "position": [-1480, 0],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "fetch-rows",
+      "name": "Fetch awaiting_join rows",
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "cl001_p007_precall_nurturing_wa_groups",
+        "returnAll": false,
+        "limit": 200,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            { "condition": "eq", "keyName": "state", "keyValue": "awaiting_join" }
+          ]
+        }
+      },
+      "position": [-1256, 0],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1
+    },
+    {
+      "id": "filter-4h",
+      "name": "Filter 4h reinvite",
+      "parameters": {
+        "jsCode": "// Filtra rows que llevan >=4h en awaiting_join y todavía no se les ha hecho\n// la re-invitación de las 4h.\n//\n// Limitamos también a edad <24h para evitar pisar la rama de Slack 24h.\n// Si por alguna razón no se ejecutó este branch a tiempo, no pasa nada: la\n// rama 24h alertará igual y el SDR sabrá lo que pasa.\n\nconst items = $input.all();\nconst NOW = Date.now();\nconst MS_4H = 4 * 3600 * 1000;\nconst MS_24H = 24 * 3600 * 1000;\n\nconst out = [];\nfor (const item of items) {\n  const row = item.json;\n  const createdAt = Date.parse(row.created_at);\n  if (!createdAt) continue;\n  const age = NOW - createdAt;\n  if (age < MS_4H) continue;\n  if (age >= MS_24H) continue;\n  if (row.followup_4h_sent_at) continue;\n  if (!row.pending_participants || row.pending_participants.length === 0) continue;\n  if (!row.invite_url) continue;\n  out.push({ json: row });\n}\nreturn out;\n"
+      },
+      "position": [-1032, -300],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "patch-4h",
+      "name": "Patch 4h timestamp",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "PATCH",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { followup_4h_sent_at: new Date().toISOString() } }}",
+        "options": {}
+      },
+      "position": [-808, -300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "expand-phones",
+      "name": "Expand pending phones",
+      "parameters": {
+        "jsCode": "// Por cada row, emitir N items (uno por pending phone) con el texto del\n// re-recordatorio listo. NOTE: el PATCH del timestamp ya se hizo arriba, esto\n// sólo construye el envío.\n//\n// El nodo Patch 4h timestamp devolvió 204 (return=minimal). Para no perder\n// los datos de la row, los leemos de Filter 4h reinvite por nombre.\n\nconst rows = $('Filter 4h reinvite').all();\nconst out = [];\nfor (const item of rows) {\n  const row = item.json;\n  for (const pp of (row.pending_participants || [])) {\n    const greeting = pp.role === 'lead'\n      ? `Hola ${pp.name}, te recordamos el enlace del grupo de la llamada por si no entraste antes: ${row.invite_url}`\n      : `Hola ${pp.name}, te recuerdo el enlace al grupo del lead ${row.lead_name} (${row.lead_company}): ${row.invite_url}`;\n    out.push({ json: { row_id: row.id, number: pp.phone, text: greeting, name: pp.name, role: pp.role } });\n  }\n}\nreturn out;\n"
+      },
+      "position": [-584, -300],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "httpHeaderAuth": { "id": "XDaiffOfa6HbE1lc", "name": "EvoAPI Cion" }
+      },
+      "id": "send-4h-invite",
+      "name": "Send 4h invite",
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "=https://cioevolutionapiapp.nexau.es/message/sendText/Leon-Test",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $json.number, text: $json.text } }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [-360, -300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "filter-24h",
+      "name": "Filter 24h Slack",
+      "parameters": {
+        "jsCode": "// Filtra rows que llevan >=24h en awaiting_join y no se ha lanzado todavía\n// el Slack alert al SDR.\n\nconst items = $input.all();\nconst NOW = Date.now();\nconst MS_24H = 24 * 3600 * 1000;\nconst MS_72H = 72 * 3600 * 1000;\n\nconst out = [];\nfor (const item of items) {\n  const row = item.json;\n  const createdAt = Date.parse(row.created_at);\n  if (!createdAt) continue;\n  const age = NOW - createdAt;\n  if (age < MS_24H) continue;\n  if (age >= MS_72H) continue;\n  if (row.slack_alert_24h_sent_at) continue;\n  out.push({ json: row });\n}\nreturn out;\n"
+      },
+      "position": [-1032, 0],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "patch-24h",
+      "name": "Patch 24h timestamp",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "PATCH",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { slack_alert_24h_sent_at: new Date().toISOString() } }}",
+        "options": {}
+      },
+      "position": [-808, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "send-24h-slack",
+      "name": "Send 24h Slack alert",
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/__SLACK_WEBHOOK_REDACTED__",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ text: '⚠️ Lead no ha entrado al grupo WhatsApp (24h)', blocks: [ { type: 'section', text: { type: 'mrkdwn', text: '⚠️ *Lead lleva 24h sin entrar al grupo de Pre-Call Nurturing*\\n\\n• Lead: `' + $('Filter 24h Slack').first().json.lead_name + '` (' + $('Filter 24h Slack').first().json.lead_company + ')\\n• Tlf lead: `' + $('Filter 24h Slack').first().json.lead_phone + '`\\n• Grupo: ' + $('Filter 24h Slack').first().json.group_subject + '\\n• Pending: ' + JSON.stringify(($('Filter 24h Slack').first().json.pending_participants||[]).map(p => p.role + ':' + p.name)) + '\\n• Invite URL: ' + $('Filter 24h Slack').first().json.invite_url + '\\n\\nAcción sugerida: llamar al lead u otro canal. Si no entra a las 72h se marcará failed.' } } ] }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [-584, 0],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "filter-72h",
+      "name": "Filter 72h failed",
+      "parameters": {
+        "jsCode": "// Filtra rows con >=72h en awaiting_join. Vamos a marcar failed y avisar.\n\nconst items = $input.all();\nconst NOW = Date.now();\nconst MS_72H = 72 * 3600 * 1000;\n\nconst out = [];\nfor (const item of items) {\n  const row = item.json;\n  const createdAt = Date.parse(row.created_at);\n  if (!createdAt) continue;\n  if ((NOW - createdAt) < MS_72H) continue;\n  out.push({ json: row });\n}\nreturn out;\n"
+      },
+      "position": [-1032, 300],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "supabaseApi": { "id": "m4dyIAOkci8VIxok", "name": "Supabase Outbound" }
+      },
+      "id": "patch-failed",
+      "name": "Patch state failed",
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "method": "PATCH",
+        "url": "=https://mazhrnqztnjvppgbltuq.supabase.co/rest/v1/cl001_p007_precall_nurturing_wa_groups?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { state: 'failed_no_join_72h' } }}",
+        "options": {}
+      },
+      "position": [-808, 300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "id": "send-72h-slack",
+      "name": "Send 72h Slack alert",
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/__SLACK_WEBHOOK_REDACTED__",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ text: '❌ Lead no entró al grupo (72h, FAILED)', blocks: [ { type: 'section', text: { type: 'mrkdwn', text: '❌ *Lead marcado como FAILED tras 72h sin entrar al grupo*\\n\\n• Lead: `' + $('Filter 72h failed').first().json.lead_name + '` (' + $('Filter 72h failed').first().json.lead_company + ')\\n• Tlf lead: `' + $('Filter 72h failed').first().json.lead_phone + '`\\n• Grupo: ' + $('Filter 72h failed').first().json.group_subject + '\\n• Meeting era: ' + $('Filter 72h failed').first().json.meeting_at + '\\n\\nEl flujo automático ya no le mandará más invites.' } } ] }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "position": [-584, 300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
