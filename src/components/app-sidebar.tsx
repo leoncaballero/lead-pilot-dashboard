@@ -21,6 +21,7 @@ import {
   HeartPulse,
   Filter,
   Globe,
+  Eye,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ const mainItems = [
 ];
 
 const insightsItems = [
+  { title: "Visibility", url: "/visibility", icon: Eye },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Auto-send Monitor", url: "/auto-send-monitor", icon: Bot },
   { title: "Prompt Performance", url: "/prompt-performance", icon: Trophy },
